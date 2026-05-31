@@ -1,0 +1,838 @@
+azure_to_aws:
+  "Azure Virtual Machines":
+    candidates:
+      - service: "Amazon EC2"
+        use_when: "Lift-and-shift VM workloads"
+      - service: "Amazon ECS"
+        use_when: "Containerized application modernization"
+      - service: "AWS Lambda"
+        use_when: "Event-driven workloads after refactoring"
+
+  "Azure App Service":
+    candidates:
+      - service: "AWS Elastic Beanstalk"
+        use_when: "Managed application hosting with minimal operational overhead"
+      - service: "Amazon ECS"
+        use_when: "Containerized web applications"
+      - service: "AWS App Runner"
+        use_when: "Simple containerized web services"
+
+  "Azure Functions":
+    candidates:
+      - service: "AWS Lambda"
+        use_when: "Serverless event-driven workloads"
+
+  "Azure Blob Storage":
+    candidates:
+      - service: "Amazon S3"
+        use_when: "Object storage"
+
+  "Azure SQL Database":
+    candidates:
+      - service: "Amazon RDS"
+        use_when: "Managed relational database migration"
+      - service: "Amazon Aurora"
+        use_when: "Cloud-native relational modernization"
+
+  "Azure Cosmos DB":
+    candidates:
+      - service: "Amazon DynamoDB"
+        use_when: "Key-value or document-style workloads"
+      - service: "Amazon DocumentDB"
+        use_when: "MongoDB-compatible document database workloads"
+
+  "Azure Virtual Network":
+    candidates:
+      - service: "Amazon VPC"
+        use_when: "Network isolation, routing, subnets, and security boundaries"
+
+  "Azure Gateway Subnet":
+    candidates:
+      - service: "AWS Transit Gateway VPC Attachment"
+        use_when: "Represent the AWS VPC attachment model that replaces Azure gateway subnet placement"
+
+  "Azure ExpressRoute":
+    candidates:
+      - service: "AWS Direct Connect"
+        use_when: "Private dedicated connectivity between on-premises environments and AWS"
+      - service: "AWS Transit Gateway"
+        use_when: "Hub-and-spoke routing across multiple VPCs and hybrid networks"
+
+  "Azure ExpressRoute Circuit":
+    candidates:
+      - service: "AWS Direct Connect"
+        use_when: "Private dedicated circuit connectivity to AWS"
+
+  "Azure ExpressRoute Gateway":
+    candidates:
+      - service: "AWS Direct Connect Gateway"
+        use_when: "Connecting Direct Connect to one or more VPCs through AWS network gateways"
+      - service: "AWS Transit Gateway"
+        use_when: "Centralized routing across multiple VPCs and hybrid connections"
+
+  "Azure VPN Gateway":
+    candidates:
+      - service: "AWS Site-to-Site VPN"
+        use_when: "Encrypted IPSec VPN connectivity from customer networks to AWS"
+      - service: "AWS Transit Gateway"
+        use_when: "Centralized VPN termination and routing for multiple VPCs"
+
+  "Azure Virtual Network Gateway":
+    candidates:
+      - service: "AWS Transit Gateway"
+        use_when: "Central hub for VPN or Direct Connect routing into AWS VPCs"
+      - service: "AWS Site-to-Site VPN"
+        use_when: "Encrypted VPN connectivity for a single VPC or simple topology"
+
+  "Azure Load Balancer":
+    candidates:
+      - service: "Elastic Load Balancing"
+        use_when: "Layer 4 load balancing"
+      - service: "Application Load Balancer"
+        use_when: "Layer 7 HTTP or HTTPS application routing"
+
+  "Azure Application Gateway":
+    candidates:
+      - service: "Application Load Balancer"
+        use_when: "Layer 7 routing"
+      - service: "AWS WAF"
+        use_when: "Web application firewall requirements"
+
+  "Azure Key Vault":
+    candidates:
+      - service: "AWS Secrets Manager"
+        use_when: "Application secrets and rotation"
+      - service: "AWS KMS"
+        use_when: "Encryption key management"
+
+  "Azure Monitor":
+    candidates:
+      - service: "Amazon CloudWatch"
+        use_when: "Metrics, logs, alarms, and dashboards"
+
+  "Azure Service Bus":
+    candidates:
+      - service: "Amazon SQS"
+        use_when: "Queue-based decoupling"
+      - service: "Amazon SNS"
+        use_when: "Pub/sub messaging"
+      - service: "Amazon EventBridge"
+        use_when: "Event-driven architecture"
+
+gcp_to_aws:
+  "Cloud Pub/Sub":
+    candidates:
+      - service: "Amazon SNS + Amazon SQS"
+        use_when: "Pub/sub fanout with durable queue-based consumers"
+      - service: "Amazon EventBridge"
+        use_when: "Event routing across SaaS, AWS services, and custom applications"
+      - service: "Amazon Kinesis Data Streams / Firehose"
+        use_when: "High-volume streaming telemetry ingestion"
+
+  "Pub/Sub":
+    candidates:
+      - service: "Amazon SNS + Amazon SQS"
+        use_when: "Pub/sub fanout with durable queue-based consumers"
+      - service: "Amazon EventBridge"
+        use_when: "Event routing across SaaS, AWS services, and custom applications"
+      - service: "Amazon Kinesis Data Streams / Firehose"
+        use_when: "High-volume streaming telemetry ingestion"
+
+  "Dataflow":
+    candidates:
+      - service: "AWS Glue"
+        use_when: "Managed batch or streaming ETL pipelines"
+      - service: "Amazon Managed Service for Apache Flink"
+        use_when: "Low-latency streaming pipelines and Apache Beam-style streaming modernization"
+      - service: "Amazon EMR"
+        use_when: "Apache Spark or Hadoop workloads requiring cluster-level control"
+
+  "Cloud Storage":
+    candidates:
+      - service: "Amazon S3"
+        use_when: "Object storage, data lake, static assets, and durable file landing zones"
+
+  "Datastore":
+    candidates:
+      - service: "Amazon DynamoDB"
+        use_when: "Serverless key-value or document-style NoSQL workloads"
+      - service: "Amazon DocumentDB"
+        use_when: "MongoDB-compatible document database workloads"
+
+  "Cloud Datastore":
+    candidates:
+      - service: "Amazon DynamoDB"
+        use_when: "Serverless key-value or document-style NoSQL workloads"
+      - service: "Amazon DocumentDB"
+        use_when: "MongoDB-compatible document database workloads"
+
+  "App Engine":
+    candidates:
+      - service: "AWS Application Hosting Options"
+        use_when: "Choose App Runner, ECS/Fargate, Lambda, Elastic Beanstalk, or EC2 after validating runtime and deployment model"
+      - service: "AWS App Runner"
+        use_when: "Simple containerized web services"
+      - service: "Amazon ECS"
+        use_when: "Containerized application modernization"
+      - service: "AWS Lambda"
+        use_when: "Event-driven or API workloads after refactoring"
+      - service: "AWS Elastic Beanstalk"
+        use_when: "Managed application hosting with familiar deployment workflow"
+
+  "Compute Engine":
+    candidates:
+      - service: "Amazon EC2"
+        use_when: "Lift-and-shift VM workloads"
+      - service: "Amazon ECS"
+        use_when: "Containerized workload modernization"
+
+  "BigQuery":
+    candidates:
+      - service: "Amazon Redshift"
+        use_when: "Cloud data warehouse and analytical query workloads"
+      - service: "Amazon Athena + AWS Glue Data Catalog"
+        use_when: "Serverless SQL queries over data in Amazon S3"
+
+  "Dataproc":
+    candidates:
+      - service: "Amazon EMR"
+        use_when: "Managed Spark, Hadoop, Hive, or Presto workloads"
+      - service: "AWS Glue"
+        use_when: "Serverless ETL modernization"
+
+  "Datalab":
+    candidates:
+      - service: "Amazon SageMaker Studio"
+        use_when: "Managed notebook and ML experimentation environment"
+
+  "Cloud Monitoring":
+    candidates:
+      - service: "Amazon CloudWatch"
+        use_when: "Metrics, logs, alarms, dashboards, and operational observability"
+
+  "Monitoring":
+    candidates:
+      - service: "Amazon CloudWatch"
+        use_when: "Metrics, logs, alarms, dashboards, and operational observability"
+
+  "Cloud Logging":
+    candidates:
+      - service: "Amazon CloudWatch + AWS CloudTrail + Amazon OpenSearch Service"
+        use_when: "Centralized logs, audit events, metrics, dashboards, and searchable log analytics"
+      - service: "Amazon CloudWatch"
+        use_when: "Centralized logs, metrics, alarms, and operational dashboards without advanced log search"
+
+  "Logging":
+    candidates:
+      - service: "Amazon CloudWatch + AWS CloudTrail + Amazon OpenSearch Service"
+        use_when: "Centralized logs, audit events, metrics, dashboards, and searchable log analytics"
+      - service: "Amazon CloudWatch"
+        use_when: "Centralized logs, metrics, alarms, and operational dashboards without advanced log search"
+
+  "Cloud IoT Core":
+    candidates:
+      - service: "AWS IoT Core"
+        use_when: "Managed device ingestion, registry, messaging, and rules engine"
+
+azure_to_gcp:
+  "Azure Virtual Machines":
+    candidates:
+      - service: "Compute Engine"
+        use_when: "Lift-and-shift VM workloads"
+      - service: "Google Kubernetes Engine"
+        use_when: "Containerized modernization"
+      - service: "Cloud Run"
+        use_when: "Containerized services with minimal operations"
+
+  "Azure App Service":
+    candidates:
+      - service: "App Engine"
+        use_when: "Managed application hosting"
+      - service: "Cloud Run"
+        use_when: "Containerized web services"
+      - service: "Google Kubernetes Engine"
+        use_when: "Containerized applications requiring orchestration"
+
+  "Azure Functions":
+    candidates:
+      - service: "Cloud Functions"
+        use_when: "Serverless event-driven workloads"
+      - service: "Cloud Run functions"
+        use_when: "Modern serverless functions and event handlers"
+
+  "Azure Blob Storage":
+    candidates:
+      - service: "Cloud Storage"
+        use_when: "Object storage"
+
+  "Azure SQL Database":
+    candidates:
+      - service: "Cloud SQL"
+        use_when: "Managed relational database migration"
+      - service: "AlloyDB"
+        use_when: "PostgreSQL modernization with high performance requirements"
+
+  "Azure Cosmos DB":
+    candidates:
+      - service: "Firestore"
+        use_when: "Document-style application data"
+      - service: "Cloud Bigtable"
+        use_when: "High-throughput wide-column workloads"
+
+  "Azure Virtual Network":
+    candidates:
+      - service: "VPC Network"
+        use_when: "Network isolation, routing, subnets, and firewall boundaries"
+
+  "Azure Gateway Subnet":
+    candidates:
+      - service: "VLAN attachments + Cloud Router"
+        use_when: "Logical attachment and routing model for private connectivity into a GCP VPC"
+
+  "Azure ExpressRoute":
+    candidates:
+      - service: "Dedicated Interconnect"
+        use_when: "Direct private connectivity from customer edge to Google edge"
+      - service: "Partner Interconnect"
+        use_when: "Private connectivity through a supported service provider"
+
+  "Azure ExpressRoute Circuit":
+    candidates:
+      - service: "Dedicated Interconnect"
+        use_when: "Direct private circuit connectivity to Google Cloud"
+      - service: "Partner Interconnect"
+        use_when: "Provider-mediated private connectivity to Google Cloud"
+
+  "Azure ExpressRoute Gateway":
+    candidates:
+      - service: "Cloud Router + VLAN attachments"
+        use_when: "Dynamic BGP routing and logical Interconnect attachment into the VPC"
+
+  "Azure VPN Gateway":
+    candidates:
+      - service: "HA VPN"
+        use_when: "Production-grade IPsec VPN backup or failover path"
+      - service: "Cloud VPN"
+        use_when: "Simpler encrypted VPN connectivity"
+
+  "Azure Virtual Network Gateway":
+    candidates:
+      - service: "Cloud Router + HA VPN"
+        use_when: "Dynamic routing for VPN connectivity into a VPC"
+      - service: "Cloud Router + VLAN attachments"
+        use_when: "Dynamic routing for Interconnect connectivity into a VPC"
+
+  "Azure Load Balancer":
+    candidates:
+      - service: "Cloud Load Balancing"
+        use_when: "Layer 4 or layer 7 load balancing"
+
+  "Azure Application Gateway":
+    candidates:
+      - service: "Cloud Load Balancing"
+        use_when: "HTTP or HTTPS application routing"
+      - service: "Cloud Armor"
+        use_when: "Web application firewall and edge protection requirements"
+
+  "Azure Key Vault":
+    candidates:
+      - service: "Secret Manager"
+        use_when: "Application secrets"
+      - service: "Cloud KMS"
+        use_when: "Encryption key management"
+
+  "Azure DNS":
+    candidates:
+      - service: "Cloud DNS"
+        use_when: "Managed DNS zones and records"
+
+  "Azure Private Link":
+    candidates:
+      - service: "Private Service Connect"
+        use_when: "Private access to managed services from inside a VPC"
+
+  "Azure Firewall":
+    candidates:
+      - service: "Cloud Firewall policies"
+        use_when: "Centralized network filtering and policy enforcement"
+
+  "Azure Monitor":
+    candidates:
+      - service: "Cloud Monitoring + Cloud Logging"
+        use_when: "Metrics, logs, dashboards, and alerting"
+
+  "Azure Service Bus":
+    candidates:
+      - service: "Pub/Sub"
+        use_when: "Pub/sub messaging and durable subscriptions"
+      - service: "Cloud Tasks"
+        use_when: "Task queue and asynchronous work dispatch"
+
+gcp_to_azure:
+  "Cloud Pub/Sub":
+    candidates:
+      - service: "Azure Event Hubs"
+        use_when: "High-throughput streaming ingestion and telemetry"
+      - service: "Azure Service Bus"
+        use_when: "Enterprise commands, queues, ordered business messages, and durable subscriptions"
+      - service: "Azure Event Grid"
+        use_when: "Event routing and lightweight pub/sub"
+
+  "Pub/Sub":
+    candidates:
+      - service: "Azure Event Hubs"
+        use_when: "High-throughput streaming ingestion and telemetry"
+      - service: "Azure Service Bus"
+        use_when: "Enterprise commands, queues, ordered business messages, and durable subscriptions"
+      - service: "Azure Event Grid"
+        use_when: "Event routing and lightweight pub/sub"
+
+  "Dataflow":
+    candidates:
+      - service: "Azure Stream Analytics"
+        use_when: "Streaming transformations and near-real-time processing"
+      - service: "Azure Databricks"
+        use_when: "Spark, Structured Streaming, or Beam-style pipeline modernization"
+      - service: "Azure Data Factory"
+        use_when: "Managed batch ETL and orchestration"
+
+  "Cloud Storage":
+    candidates:
+      - service: "Azure Data Lake Storage Gen2"
+        use_when: "Object storage, raw/curated data lake zones, and analytics landing areas"
+      - service: "Azure Blob Storage"
+        use_when: "General object storage"
+
+  "Datastore":
+    candidates:
+      - service: "Azure Cosmos DB"
+        use_when: "Document or key-value NoSQL workloads"
+
+  "Cloud Datastore":
+    candidates:
+      - service: "Azure Cosmos DB"
+        use_when: "Document or key-value NoSQL workloads"
+
+  "App Engine":
+    candidates:
+      - service: "Azure App Service"
+        use_when: "Managed web application hosting"
+      - service: "Azure Container Apps"
+        use_when: "Containerized web services"
+      - service: "Azure Kubernetes Service"
+        use_when: "Containerized applications requiring orchestration"
+
+  "Compute Engine":
+    candidates:
+      - service: "Azure Virtual Machines"
+        use_when: "Lift-and-shift VM workloads"
+
+  "BigQuery":
+    candidates:
+      - service: "Azure Synapse Analytics"
+        use_when: "Enterprise data warehouse and analytics"
+      - service: "Microsoft Fabric"
+        use_when: "Lakehouse and BI-oriented analytics modernization"
+
+  "Dataproc":
+    candidates:
+      - service: "Azure Databricks"
+        use_when: "Spark analytics workloads"
+      - service: "Azure HDInsight"
+        use_when: "Hadoop ecosystem lift-and-shift"
+
+  "Datalab":
+    candidates:
+      - service: "Azure Machine Learning"
+        use_when: "Managed notebooks and ML experimentation"
+
+  "Cloud Monitoring":
+    candidates:
+      - service: "Azure Monitor + Log Analytics + Application Insights"
+        use_when: "Metrics, logs, traces, application telemetry, alerts, and dashboards"
+
+  "Monitoring":
+    candidates:
+      - service: "Azure Monitor + Log Analytics + Application Insights"
+        use_when: "Metrics, logs, traces, application telemetry, alerts, and dashboards"
+
+  "Cloud Logging":
+    candidates:
+      - service: "Azure Monitor + Log Analytics + Application Insights"
+        use_when: "Centralized logs, audit, traces, application telemetry, and operational analytics"
+
+  "Logging":
+    candidates:
+      - service: "Azure Monitor + Log Analytics + Application Insights"
+        use_when: "Centralized logs, audit, traces, application telemetry, and operational analytics"
+
+aws_to_azure:
+  "Amazon EC2":
+    candidates:
+      - service: "Azure Virtual Machines"
+        use_when: "Lift-and-shift VM workloads"
+      - service: "Azure Kubernetes Service"
+        use_when: "Containerized modernization"
+
+  "Amazon ECS":
+    candidates:
+      - service: "Azure Container Apps"
+        use_when: "Managed containerized services"
+      - service: "Azure Kubernetes Service"
+        use_when: "Kubernetes-based orchestration"
+
+  "Amazon EKS":
+    candidates:
+      - service: "Azure Kubernetes Service"
+        use_when: "Kubernetes-based orchestration"
+
+  "AWS Lambda":
+    candidates:
+      - service: "Azure Functions"
+        use_when: "Serverless event-driven workloads"
+
+  "AWS Elastic Beanstalk":
+    candidates:
+      - service: "Azure App Service"
+        use_when: "Managed application hosting"
+
+  "AWS App Runner":
+    candidates:
+      - service: "Azure Container Apps"
+        use_when: "Simple managed containerized services"
+
+  "Amazon S3":
+    candidates:
+      - service: "Azure Data Lake Storage Gen2"
+        use_when: "Object storage, document landing zones, and analytics data lake workloads"
+      - service: "Azure Blob Storage"
+        use_when: "Simple object storage"
+
+  "Amazon RDS":
+    candidates:
+      - service: "Azure SQL Database"
+        use_when: "Managed relational database migration"
+      - service: "Azure Database for PostgreSQL"
+        use_when: "Managed PostgreSQL workloads"
+
+  "Amazon Aurora":
+    candidates:
+      - service: "Azure Database for PostgreSQL"
+        use_when: "Managed PostgreSQL-compatible workloads"
+      - service: "Azure SQL Database"
+        use_when: "Managed relational application workloads"
+
+  "Amazon DynamoDB":
+    candidates:
+      - service: "Azure Cosmos DB"
+        use_when: "Key-value or document-style workloads"
+
+  "Amazon VPC":
+    candidates:
+      - service: "Azure Virtual Network"
+        use_when: "Network isolation, routing, subnets, and security boundaries"
+
+  "Application Load Balancer":
+    candidates:
+      - service: "Azure Application Gateway"
+        use_when: "Layer 7 HTTP or HTTPS application routing"
+      - service: "Azure Load Balancer"
+        use_when: "Layer 4 load balancing"
+
+  "Elastic Load Balancing":
+    candidates:
+      - service: "Azure Load Balancer"
+        use_when: "Layer 4 load balancing"
+      - service: "Azure Application Gateway"
+        use_when: "Layer 7 routing"
+
+  "AWS Secrets Manager":
+    candidates:
+      - service: "Azure Key Vault"
+        use_when: "Secrets and key management"
+
+  "AWS KMS":
+    candidates:
+      - service: "Azure Key Vault"
+        use_when: "Encryption key management"
+
+  "Amazon CloudWatch":
+    candidates:
+      - service: "Azure Monitor + Log Analytics"
+        use_when: "Metrics, logs, alerts, and dashboards"
+
+  "Amazon SQS":
+    candidates:
+      - service: "Azure Service Bus"
+        use_when: "Queue-based decoupling"
+
+  "Amazon SNS":
+    candidates:
+      - service: "Azure Event Grid"
+        use_when: "Pub/sub event routing"
+      - service: "Azure Service Bus"
+        use_when: "Durable topics and subscriptions"
+
+  "Amazon EventBridge":
+    candidates:
+      - service: "Azure Event Grid"
+        use_when: "Event routing and integration"
+
+  "Amazon MSK":
+    candidates:
+      - service: "Azure Event Hubs with Kafka support"
+        use_when: "Kafka-compatible event streaming and ingestion"
+
+  "AWS Glue":
+    candidates:
+      - service: "Azure Data Factory / Fabric Data Factory"
+        use_when: "ETL orchestration, data ingestion, and pipeline scheduling"
+      - service: "Azure Databricks"
+        use_when: "Spark-based transformation workloads"
+
+  "Amazon Redshift":
+    candidates:
+      - service: "Azure Synapse Analytics"
+        use_when: "Cloud data warehouse and analytical query workloads"
+      - service: "Microsoft Fabric"
+        use_when: "Lakehouse and BI-oriented analytics"
+
+  "Amazon SageMaker":
+    candidates:
+      - service: "Azure Machine Learning"
+        use_when: "ML pipelines, notebooks, model training, and MLOps"
+
+  "Amazon Bedrock":
+    candidates:
+      - service: "Azure OpenAI / Azure AI Foundry"
+        use_when: "Foundation model access, AI orchestration, and generative AI workloads"
+
+  "Neo4j":
+    candidates:
+      - service: "Neo4j AuraDB on Azure"
+        use_when: "Managed Neo4j graph database and knowledge graph workloads"
+      - service: "Neo4j on Azure Kubernetes Service"
+        use_when: "Self-managed Neo4j with Kubernetes operations"
+      - service: "Neo4j on Azure Virtual Machines"
+        use_when: "Lift-and-shift or custom-managed Neo4j deployments"
+
+  "Neo4j driver":
+    candidates:
+      - service: "Neo4j driver / Cypher ingestion service"
+        use_when: "Application code that reads and writes graph data through Cypher"
+
+  "Neo4j Bloom":
+    candidates:
+      - service: "Neo4j Bloom"
+        use_when: "Graph exploration and visualization"
+
+  "Neo4j Graph Data Science":
+    candidates:
+      - service: "Neo4j Graph Data Science"
+        use_when: "Graph algorithms, embeddings, similarity, and ranking"
+
+  "GraphRAG":
+    candidates:
+      - service: "Neo4j GraphRAG retriever / Neo4j driver"
+        use_when: "Graph-aware retrieval for grounding LLM responses"
+      - service: "Azure AI Search"
+        use_when: "Optional hybrid, vector, keyword, or semantic retrieval alongside graph retrieval"
+
+  "Amazon EMR":
+    candidates:
+      - service: "Azure Databricks"
+        use_when: "Spark analytics workloads"
+      - service: "Azure HDInsight"
+        use_when: "Hadoop ecosystem workloads"
+
+aws_to_gcp:
+  "Amazon EC2":
+    candidates:
+      - service: "Compute Engine"
+        use_when: "Lift-and-shift VM workloads"
+      - service: "Google Kubernetes Engine"
+        use_when: "Containerized modernization"
+
+  "Amazon ECS":
+    candidates:
+      - service: "Google Kubernetes Engine"
+        use_when: "Containerized applications requiring orchestration"
+      - service: "Cloud Run"
+        use_when: "Managed containerized services"
+
+  "AWS Lambda":
+    candidates:
+      - service: "Cloud Functions"
+        use_when: "Serverless event-driven workloads"
+      - service: "Cloud Run functions"
+        use_when: "Modern serverless functions and event handlers"
+
+  "AWS Elastic Beanstalk":
+    candidates:
+      - service: "App Engine"
+        use_when: "Managed application hosting"
+      - service: "Cloud Run"
+        use_when: "Containerized web services"
+
+  "AWS App Runner":
+    candidates:
+      - service: "Cloud Run"
+        use_when: "Simple managed containerized web services"
+
+  "Amazon S3":
+    candidates:
+      - service: "Cloud Storage"
+        use_when: "Object storage"
+
+  "Amazon RDS":
+    candidates:
+      - service: "Cloud SQL"
+        use_when: "Managed relational database migration"
+      - service: "AlloyDB"
+        use_when: "PostgreSQL modernization"
+
+  "Amazon Aurora":
+    candidates:
+      - service: "AlloyDB"
+        use_when: "PostgreSQL-compatible modernization"
+      - service: "Cloud SQL"
+        use_when: "Managed relational database migration"
+
+  "Amazon DynamoDB":
+    candidates:
+      - service: "Firestore"
+        use_when: "Document or key-value NoSQL workloads"
+      - service: "Cloud Bigtable"
+        use_when: "High-throughput wide-column workloads"
+
+  "Amazon VPC":
+    candidates:
+      - service: "VPC Network"
+        use_when: "Network isolation, routing, subnets, and firewall boundaries"
+
+  "Application Load Balancer":
+    candidates:
+      - service: "Cloud Load Balancing"
+        use_when: "Layer 7 HTTP or HTTPS routing"
+      - service: "Cloud Armor"
+        use_when: "Web application firewall requirements"
+
+  "Elastic Load Balancing":
+    candidates:
+      - service: "Cloud Load Balancing"
+        use_when: "Layer 4 or layer 7 load balancing"
+
+  "AWS Secrets Manager":
+    candidates:
+      - service: "Secret Manager"
+        use_when: "Application secrets"
+      - service: "Cloud KMS"
+        use_when: "Encryption key management"
+
+  "AWS KMS":
+    candidates:
+      - service: "Cloud KMS"
+        use_when: "Encryption key management"
+
+  "Amazon CloudWatch":
+    candidates:
+      - service: "Cloud Monitoring + Cloud Logging"
+        use_when: "Metrics, logs, alerting, and dashboards"
+
+  "Amazon SQS":
+    candidates:
+      - service: "Pub/Sub"
+        use_when: "Durable pub/sub and queue-style consumers"
+      - service: "Cloud Tasks"
+        use_when: "Task queues"
+
+  "Amazon SNS":
+    candidates:
+      - service: "Pub/Sub"
+        use_when: "Pub/sub fanout and durable subscriptions"
+      - service: "Eventarc"
+        use_when: "Event routing across Google Cloud services"
+
+  "Amazon EventBridge":
+    candidates:
+      - service: "Eventarc"
+        use_when: "Event routing across Google Cloud services"
+      - service: "Pub/Sub"
+        use_when: "Application pub/sub messaging"
+
+  "Amazon Redshift":
+    candidates:
+      - service: "BigQuery"
+        use_when: "Cloud data warehouse and analytical query workloads"
+
+  "Amazon EMR":
+    candidates:
+      - service: "Dataproc"
+        use_when: "Managed Spark, Hadoop, Hive, or Presto workloads"
+      - service: "Dataflow"
+        use_when: "Managed ETL or streaming pipelines"
+
+  "Amazon EKS":
+    candidates:
+      - service: "Google Kubernetes Engine"
+        use_when: "Kubernetes-based container orchestration"
+      - service: "Cloud Run"
+        use_when: "Containerized services that can move to fully managed serverless containers"
+
+  "Amazon MSK":
+    candidates:
+      - service: "Managed Service for Apache Kafka"
+        use_when: "Preserve Kafka clients, topics, partitions, and consumer-group semantics"
+      - service: "Pub/Sub"
+        use_when: "Cloud-native eventing redesign where Kafka compatibility is not required"
+
+  "AWS Glue":
+    candidates:
+      - service: "Cloud Data Fusion"
+        use_when: "Managed data integration, visual ETL, and pipeline orchestration"
+      - service: "Dataflow"
+        use_when: "Apache Beam-style batch or streaming data processing"
+      - service: "Dataproc"
+        use_when: "Spark or Hadoop workloads requiring cluster-level control"
+
+  "Amazon SageMaker":
+    candidates:
+      - service: "Vertex AI"
+        use_when: "Managed ML pipelines, notebooks, model training, model registry, and model serving"
+
+  "Amazon Bedrock":
+    candidates:
+      - service: "Vertex AI / Gemini"
+        use_when: "Foundation model access, embeddings, prompt orchestration, and generative AI workloads"
+
+  "Neo4j":
+    candidates:
+      - service: "Neo4j AuraDB on Google Cloud"
+        use_when: "Preserve Neo4j graph database, Cypher, drivers, Bloom, and Graph Data Science ecosystem"
+
+  "Graph Database":
+    candidates:
+      - service: "Neo4j AuraDB on Google Cloud"
+        use_when: "Preserve the existing Neo4j knowledge graph rather than redesigning to a different database"
+
+  "Neo4j driver":
+    candidates:
+      - service: "Neo4j driver / Cypher ingestion service"
+        use_when: "Preserve application graph writes and Cypher-based graph access"
+
+  "Neo4j Bloom":
+    candidates:
+      - service: "Neo4j Bloom"
+        use_when: "Preserve graph exploration and business-user visualization"
+
+  "Neo4j Graph Data Science":
+    candidates:
+      - service: "Neo4j Graph Data Science / AuraDS"
+        use_when: "Preserve graph algorithms, embeddings, scoring, ranking, and graph analytics"
+
+  "GraphRAG":
+    candidates:
+      - service: "Neo4j GraphRAG retriever / Cypher retrieval"
+        use_when: "Preserve graph-aware retrieval and Cypher context grounding"
+      - service: "Vertex AI Vector Search"
+        use_when: "Add optional hybrid vector retrieval alongside Neo4j graph retrieval"

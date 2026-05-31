@@ -1,0 +1,22 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+pydantic
+langchain
+langchain-openai
+langgraph
+pillow
+pypdf
+pyyaml
+networkx
+jinja2
+reportlab
+pytest
+
+# Optional diagram/PDF image dependencies:
+# diagrams
+# graphviz
+# pdf2image
+# opencv-python
+# pytest-asyncio

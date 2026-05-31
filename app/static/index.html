@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CloudBridge IQ</title>
+    <link rel="icon" type="image/svg+xml" href="assets/cloudbridge-iq-favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="app-sidebar" aria-label="Primary navigation">
+        <div class="sidebar-brand">
+          <img class="sidebar-mark" src="assets/cloudbridge-iq-mark.svg" alt="" />
+          <div>
+            <strong>CloudBridge IQ</strong>
+            <span>Migration Studio</span>
+          </div>
+        </div>
+        <nav class="sidebar-nav" aria-label="Assessment workspace">
+          <button type="button" class="active" data-navigate-tab="overview"><span>OV</span>Overview</button>
+          <button type="button" data-navigate-tab="source"><span>SA</span>Source</button>
+          <button type="button" data-navigate-tab="mapping"><span>MP</span>Mapping</button>
+          <button type="button" data-navigate-tab="diagram"><span>AR</span>Architecture</button>
+          <button type="button" data-navigate-tab="plan"><span>PL</span>Plan</button>
+          <button type="button" data-navigate-tab="risks"><span>RK</span>Risk</button>
+          <button type="button" data-navigate-tab="cost"><span>CO</span>Cost</button>
+          <button type="button" data-navigate-tab="agent"><span>AI</span>Agent</button>
+          <button type="button" data-navigate-tab="report"><span>RP</span>Report</button>
+        </nav>
+        <div class="sidebar-footer">
+          <span>Workspace</span>
+          <strong id="sidebarWorkspaceStatus">AI Draft</strong>
+        </div>
+      </aside>
+
+      <header class="topbar">
+        <div class="topbar-title">
+          <div class="brand-lockup" aria-label="CloudBridge IQ">
+            <img class="brand-mark" src="assets/cloudbridge-iq-mark.svg" alt="" />
+            <div class="brand-copy">
+              <p class="eyebrow">AI Cloud Migration Assessment</p>
+              <h1>CloudBridge IQ</h1>
+            </div>
+          </div>
+          <div class="provider-logo-strip" data-supported-providers aria-label="Supported cloud providers"></div>
+        </div>
+        <div class="topbar-context" aria-label="Current assessment context">
+          <div>
+            <span>Assessment</span>
+            <strong id="currentAssessmentName">Untitled assessment</strong>
+          </div>
+          <div>
+            <span>Route</span>
+            <strong id="currentRouteSummary">Auto to AWS</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong id="currentReviewStatus">AI Draft</strong>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button type="button" class="icon-button rail-toggle" id="toggleReviewRailButton" aria-expanded="true">
+            Review
+          </button>
+          <div class="status-pill" id="apiStatus">Checking API</div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="control-panel" aria-label="Assessment inputs">
+          <div class="intake-header">
+            <p class="eyebrow">Guided Intake</p>
+            <h2>New Assessment</h2>
+            <p>Upload a diagram, confirm the route, select goals, then run the migration assessment.</p>
+          </div>
+          <form id="analysisForm" class="form-stack">
+            <section class="intake-step">
+              <div class="step-label"><span>1</span><strong>Upload</strong></div>
+              <label class="drop-zone" id="dropZone">
+                <input id="fileInput" name="file" type="file" accept="image/*,.pdf" required />
+                <span class="drop-title">Upload architecture diagram</span>
+                <span class="drop-meta" id="fileMeta">PNG, JPG, WEBP, GIF, BMP, or PDF</span>
+              </label>
+
+              <div class="preview-frame" id="previewFrame">
+                <div class="preview-empty">No diagram selected</div>
+              </div>
+            </section>
+
+            <section class="intake-step">
+              <div class="step-label"><span>2</span><strong>Cloud Route</strong></div>
+              <div class="field-grid">
+                <label>
+                  <span>Source provider</span>
+                  <select id="sourceProvider" name="source_provider">
+                    <option value="auto">Auto detect</option>
+                    <option value="azure">Azure</option>
+                    <option value="gcp">Google Cloud</option>
+                    <option value="aws">AWS</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Target provider</span>
+                  <select id="targetProvider" name="target_provider">
+                    <option value="aws">AWS</option>
+                    <option value="azure">Azure</option>
+                    <option value="gcp">Google Cloud</option>
+                  </select>
+                </label>
+              </div>
+              <div class="provider-route-panel" id="providerRouteBadges" aria-label="Selected migration provider route"></div>
+            </section>
+
+            <section class="intake-step">
+              <div class="step-label"><span>3</span><strong>Goals</strong></div>
+              <div class="preset-group" aria-label="Migration goal presets">
+                <button type="button" class="preset-button" data-goal="cost reduction">Cost</button>
+                <button type="button" class="preset-button" data-goal="modernization">Modernize</button>
+                <button type="button" class="preset-button" data-goal="disaster recovery">DR</button>
+                <button type="button" class="preset-button" data-goal="compliance">Compliance</button>
+                <button type="button" class="preset-button" data-goal="cloud exit strategy">Exit</button>
+              </div>
+
+              <label>
+                <span>Goals</span>
+                <input
+                  id="goals"
+                  name="goals"
+                  type="text"
+                  placeholder="reduce operations, improve DR, modernize hosting"
+                />
+              </label>
+
+              <label>
+                <span>Migration intent</span>
+                <textarea
+                  id="migrationIntent"
+                  name="migration_intent"
+                  rows="4"
+                  placeholder="We are migrating this from Azure to AWS."
+                ></textarea>
+              </label>
+            </section>
+
+            <details class="advanced-options">
+              <summary>Architecture options</summary>
+              <label>
+                <span>Architecture variant</span>
+                <select id="architectureVariant">
+                  <option value="balanced">Balanced enterprise baseline</option>
+                  <option value="lift-and-shift">Lift and shift</option>
+                  <option value="managed-modernization">Managed modernization</option>
+                  <option value="serverless-event-driven">Serverless and event-driven</option>
+                  <option value="data-platform">Data platform modernization</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Architecture pattern</span>
+                <select id="architecturePattern">
+                  <option value="auto">Auto detect</option>
+                  <option value="hybrid-connectivity">Hybrid connectivity</option>
+                  <option value="data-platform">Data platform</option>
+                  <option value="graphrag">GraphRAG / knowledge graph</option>
+                  <option value="web-application">Web application</option>
+                  <option value="microservices">Microservices</option>
+                  <option value="analytics-ai">Analytics and AI</option>
+                </select>
+              </label>
+            </details>
+
+            <section class="intake-step run-step">
+              <div class="step-label"><span>4</span><strong>Review & Run</strong></div>
+              <button class="primary-action" id="submitButton" type="submit">
+                Run Assessment
+              </button>
+            </section>
+          </form>
+        </section>
+
+        <section class="results-panel" aria-label="Assessment results">
+          <div class="result-header">
+            <div>
+              <p class="eyebrow">Assessment Output</p>
+              <h2 id="resultTitle">Ready</h2>
+            </div>
+            <div class="result-actions">
+              <div class="view-toggle" aria-label="View mode">
+                <button type="button" class="active" data-view-mode="executive">Executive</button>
+                <button type="button" data-view-mode="architect">Architect</button>
+              </div>
+              <button type="button" class="icon-button" id="saveAssessmentButton" title="Save assessment" disabled>
+                Save
+              </button>
+              <button type="button" class="icon-button" id="copyReportButton" title="Copy report" disabled>
+                Copy
+              </button>
+              <button type="button" class="icon-button" id="downloadPdfButton" title="Download PDF" disabled>
+                PDF
+              </button>
+              <button type="button" class="icon-button" id="downloadReportButton" title="Download report" disabled>
+                MD
+              </button>
+              <button type="button" class="icon-button" id="downloadDiagramButton" title="Download target diagram PNG" disabled>
+                PNG
+              </button>
+            </div>
+          </div>
+
+          <div class="summary-grid decision-snapshot" id="summaryGrid">
+            <div class="metric">
+              <span>Verdict</span>
+              <strong>Not run</strong>
+            </div>
+            <div class="metric">
+              <span>Readiness</span>
+              <strong>0</strong>
+            </div>
+            <div class="metric">
+              <span>Mappings</span>
+              <strong>0</strong>
+            </div>
+            <div class="metric">
+              <span>Pattern</span>
+              <strong>Auto</strong>
+            </div>
+            <div class="metric">
+              <span>Target</span>
+              <strong>AWS</strong>
+            </div>
+          </div>
+
+          <div class="analysis-meta" id="analysisMeta">
+            Analysis mode will appear after the first run.
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Result views">
+            <button type="button" class="tab active" data-tab="overview">Overview</button>
+            <button type="button" class="tab" data-tab="source">Source</button>
+            <button type="button" class="tab" data-tab="mapping">Mapping</button>
+            <button type="button" class="tab" data-tab="diagram">Architecture</button>
+            <button type="button" class="tab" data-tab="plan">Plan</button>
+            <button type="button" class="tab" data-tab="risks">Risks</button>
+            <button type="button" class="tab" data-tab="cost">Cost</button>
+            <button type="button" class="tab" data-tab="gate">Gate</button>
+            <button type="button" class="tab" data-tab="agent">Agent</button>
+            <button type="button" class="tab" data-tab="report">Report</button>
+          </div>
+
+          <div class="result-surface">
+            <div class="loading-state" id="loadingState" hidden>
+              <div class="progress-bar"><span></span></div>
+              <p>Analyzing diagram and building migration assessment</p>
+              <div class="assessment-timeline" id="assessmentTimeline" aria-live="polite"></div>
+            </div>
+
+            <div class="error-state" id="errorState" hidden></div>
+
+            <article class="tab-panel overview-view active" id="overviewPanel">
+              <div class="empty-state">
+                Upload a diagram and run an assessment to view the decision dashboard.
+              </div>
+            </article>
+
+            <article class="tab-panel source-view" id="sourcePanel">
+              <div class="empty-state">Detected architecture components will appear here.</div>
+            </article>
+
+            <article class="tab-panel mapping-view" id="mappingPanel">
+              <div class="empty-state">Service mappings will appear here.</div>
+            </article>
+
+            <article class="tab-panel diagram-view" id="diagramPanel">
+              <div class="empty-state">The generated AWS architecture diagram will appear here.</div>
+            </article>
+
+            <article class="tab-panel plan-view" id="planPanel">
+              <div class="empty-state">Migration waves and cutover plan will appear here.</div>
+            </article>
+
+            <article class="tab-panel risks-view" id="risksPanel">
+              <div class="empty-state">Risk and readiness scoring will appear here.</div>
+            </article>
+
+            <article class="tab-panel cost-view" id="costPanel">
+              <div class="empty-state">Cost and effort indicators will appear here.</div>
+            </article>
+
+            <article class="tab-panel gate-view" id="gatePanel">
+              <div class="empty-state">Decision gate checklist will appear here.</div>
+            </article>
+
+            <article class="tab-panel agent-view" id="agentPanel">
+              <section class="agent-workspace">
+                <div class="section-header">
+                  <div>
+                    <p class="eyebrow">CloudBridge IQ</p>
+                    <h3>Migration Agent</h3>
+                    <p>Ask assessment-aware questions about architecture flow, mappings, risks, cutover, costs, and the final verdict.</p>
+                  </div>
+                  <span class="agent-status" id="agentStatus">No assessment</span>
+                </div>
+
+                <div class="agent-tab-layout">
+                  <section class="agent-card agent-card-main" aria-label="Migration agent chat">
+                    <div class="agent-suggestions" aria-label="Suggested questions">
+                      <button type="button" data-agent-prompt="Explain the target architecture flow.">Architecture flow</button>
+                      <button type="button" data-agent-prompt="Which mappings need architect review?">Mapping review</button>
+                      <button type="button" data-agent-prompt="What are the top migration risks?">Top risks</button>
+                      <button type="button" data-agent-prompt="Summarize cost and savings signals.">Cost signals</button>
+                    </div>
+                    <div class="agent-chat-log" id="agentChatLog" aria-live="polite">
+                      <div class="agent-message assistant">
+                        <strong>Migration Agent</strong>
+                        <p>Run an assessment, then ask me about mappings, architecture flow, risks, cost signals, or the final verdict.</p>
+                      </div>
+                    </div>
+                    <form class="agent-chat-form" id="agentChatForm">
+                      <label>
+                        <span>Ask about this assessment</span>
+                        <textarea id="agentChatInput" rows="4" placeholder="Example: Why did it map Pub/Sub to SNS + SQS instead of SNS only?"></textarea>
+                      </label>
+                      <button type="submit" class="agent-send-button" id="agentChatSendButton">Ask Agent</button>
+                    </form>
+                  </section>
+
+                  <aside class="agent-context-panel" aria-label="Agent context">
+                    <section class="info-card">
+                      <p class="eyebrow">Good Questions</p>
+                      <ul>
+                        <li>What changed from source to target?</li>
+                        <li>Which mappings are risky or low confidence?</li>
+                        <li>What should be validated before approval?</li>
+                        <li>What is the suggested cutover and rollback path?</li>
+                      </ul>
+                    </section>
+                    <section class="info-card">
+                      <p class="eyebrow">Context Used</p>
+                      <p>The agent uses the current assessment JSON, reviewer notes, active tab, mappings, risks, target architecture, and cost signals.</p>
+                    </section>
+                  </aside>
+                </div>
+              </section>
+            </article>
+
+            <article class="tab-panel report-view" id="reportPanel">
+              <div class="empty-state">
+                Upload a diagram and run an assessment to view the report.
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <aside class="review-panel" id="reviewPanel" aria-label="Review workspace">
+          <section class="review-card">
+            <div class="rail-header">
+              <div>
+                <p class="eyebrow">Review</p>
+                <h2>Decision Gate</h2>
+              </div>
+              <button type="button" class="icon-button" id="markReviewedButton" disabled>
+                Mark
+              </button>
+            </div>
+            <div class="checklist" id="reviewChecklist">
+              <div class="empty-state">Decision checklist will appear after analysis.</div>
+            </div>
+            <label>
+              <span>Project name</span>
+              <input id="projectName" type="text" placeholder="Migration assessment project" />
+            </label>
+            <label>
+              <span>Reviewer</span>
+              <input id="reviewerName" type="text" placeholder="Lead architect or approver" />
+            </label>
+            <label>
+              <span>Workflow status</span>
+              <select id="workflowStatus">
+                <option value="ai_draft">AI Draft</option>
+                <option value="needs_review">Needs Architect Review</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="approved">Approved For Planning</option>
+              </select>
+            </label>
+          </section>
+
+          <section class="review-card">
+            <div class="rail-header">
+              <div>
+                <p class="eyebrow">Notes</p>
+                <h2>Architect Review</h2>
+              </div>
+            </div>
+            <label>
+              <span>Architect notes</span>
+              <textarea id="architectNotes" rows="5" placeholder="Review notes, assumptions, and decisions"></textarea>
+            </label>
+            <label>
+              <span>Reviewer comments</span>
+              <textarea id="reviewComments" rows="4" placeholder="Comments for the exported assessment"></textarea>
+            </label>
+          </section>
+
+          <section class="review-card">
+            <div class="rail-header">
+              <div>
+                <p class="eyebrow">History</p>
+                <h2>Saved Runs</h2>
+              </div>
+            </div>
+            <div class="history-list" id="historyList">
+              <div class="empty-state">No saved assessments yet.</div>
+            </div>
+          </section>
+
+          <section class="review-card">
+            <div class="rail-header">
+              <div>
+                <p class="eyebrow">Signals</p>
+                <h2>Warnings</h2>
+              </div>
+            </div>
+            <div class="review-notes" id="reviewNotes">
+              <div class="empty-state">Warnings and next actions will appear here.</div>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
