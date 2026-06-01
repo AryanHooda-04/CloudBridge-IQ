@@ -3052,9 +3052,8 @@ async function loadMermaidRenderer() {
     return window.mermaid;
   }
   if (!mermaidModulePromise) {
-    mermaidModulePromise = Promise.reject(
-      new Error("Mermaid renderer is not bundled in this enterprise build."),
-    );
+    mermaidModulePromise = import("https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs")
+      .then((module) => module.default || module);
   }
   return mermaidModulePromise;
 }
@@ -3062,9 +3061,9 @@ async function loadMermaidRenderer() {
 function renderMermaidLinkFallback(wrap, mermaidSource, message) {
   wrap.innerHTML = `
       <div class="mermaid-fallback">
-        <strong>Mermaid preview is disabled in this network-safe build.</strong>
+        <strong>Mermaid preview could not render inline.</strong>
         <span>${escapeHtml(message)}</span>
-        <span>The exported PDF uses the generated architecture diagram instead of external Mermaid rendering.</span>
+        <span>The exported PDF still uses the generated architecture diagram, so exports remain safe.</span>
         <details class="source-toggle">
           <summary>View Mermaid source</summary>
           <pre class="diagram-code">${escapeHtml(mermaidSource)}</pre>
@@ -3504,14 +3503,14 @@ function renderReportMermaidBlock(source) {
       <div class="report-mermaid-header">
         <div>
           <strong>Mermaid Architecture Source</strong>
-          <span>External Mermaid rendering is disabled. Use the generated diagram block for PDF and PNG exports.</span>
+          <span>Rendered inline when the Mermaid library is available. Use the generated diagram block for PDF and PNG exports.</span>
         </div>
         <div class="diagram-actions">
           <button type="button" class="diagram-link" data-copy-mermaid>Copy Source</button>
         </div>
       </div>
       <div class="report-mermaid-render" data-report-mermaid-render>
-        <div class="diagram-render-state">Mermaid preview disabled for enterprise network safety.</div>
+        <div class="diagram-render-state">Rendering Mermaid diagram</div>
       </div>
       <details class="source-toggle">
         <summary>View Mermaid source</summary>
