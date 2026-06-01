@@ -90,6 +90,7 @@ let diagramZoom = 1;
 let diagramPanState = null;
 let selectedCanvasComponentId = null;
 let agentChatHistory = [];
+let exportObjectUrls = [];
 let reviewState = {
   reviewed: false,
   status: "ai_draft",
@@ -4030,48 +4031,67 @@ async function downloadText(filename, text, type) {
 
 async function downloadBlob(filename, blob) {
   const safeFilename = filename || "cloudbridge-export";
-  if (window.showSaveFilePicker && window.isSecureContext) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: safeFilename,
-        types: filePickerTypes(safeFilename, blob.type),
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return true;
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        return false;
-      }
-      console.warn("File picker export failed, falling back to browser download:", error);
-    }
-  }
-
   const url = URL.createObjectURL(blob);
+  rememberExportUrl(url);
   const link = document.createElement("a");
   link.href = url;
   link.download = safeFilename;
+  link.rel = "noopener";
   document.body.appendChild(link);
   link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  showExportReadyToast(safeFilename, url, blob.type);
   return true;
 }
 
-function filePickerTypes(filename, mimeType) {
-  const extension = filename.split(".").pop()?.toLowerCase() || "txt";
-  const type = mimeType || {
-    pdf: "application/pdf",
-    png: "image/png",
-    md: "text/markdown",
-  }[extension] || "application/octet-stream";
-  return [
-    {
-      description: `${extension.toUpperCase()} file`,
-      accept: { [type]: [`.${extension}`] },
-    },
-  ];
+function rememberExportUrl(url) {
+  exportObjectUrls.push(url);
+  while (exportObjectUrls.length > 5) {
+    URL.revokeObjectURL(exportObjectUrls.shift());
+  }
+  window.setTimeout(() => {
+    exportObjectUrls = exportObjectUrls.filter((item) => item !== url);
+    URL.revokeObjectURL(url);
+  }, 10 * 60 * 1000);
+}
+
+function showExportReadyToast(filename, url, contentType) {
+  if (!toastRegion) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = "toast export-toast success";
+
+  const copy = document.createElement("div");
+  copy.className = "export-toast-copy";
+  const title = document.createElement("strong");
+  title.textContent = "Export ready";
+  const detail = document.createElement("span");
+  detail.textContent = `${filename} generated. If the automatic download is blocked, use the links below.`;
+  copy.append(title, detail);
+
+  const actions = document.createElement("div");
+  actions.className = "export-toast-actions";
+
+  const downloadLink = document.createElement("a");
+  downloadLink.href = url;
+  downloadLink.download = filename;
+  downloadLink.textContent = "Download";
+
+  const openLink = document.createElement("a");
+  openLink.href = url;
+  openLink.target = "_blank";
+  openLink.rel = "noopener";
+  openLink.textContent = contentType?.includes("text/") ? "Open text" : "Open";
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.textContent = "Dismiss";
+  dismiss.addEventListener("click", () => toast.remove());
+
+  actions.append(downloadLink, openLink, dismiss);
+  toast.append(copy, actions);
+  toastRegion.appendChild(toast);
 }
 
 function toBase64Url(value) {

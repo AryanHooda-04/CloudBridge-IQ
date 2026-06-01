@@ -3618,6 +3618,49 @@ body.snapshot-condensed .decision-snapshot .mini-pie span {
   border-left-color: var(--red);
 }
 
+.export-toast {
+  display: grid;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.export-toast-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.export-toast-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.export-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-toast-actions a,
+.export-toast-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+  color: var(--provider-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.export-toast-actions button {
+  color: var(--muted);
+}
+
 .toast.leaving {
   opacity: 0;
   transform: translateY(6px);
