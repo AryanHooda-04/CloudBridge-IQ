@@ -94,18 +94,38 @@ async def login(request: AuthLoginRequest, response: Response) -> AuthSessionRes
     return _create_session_response(request, response)
 
 
-@app.post("/api/session")
+@app.post("/api/session", response_model=None)
 async def create_session_or_command(
     request: dict,
     response: Response,
     session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
-) -> AuthSessionResponse | AnalyzeMigrationResponse:
+) -> object:
     action = str(request.get("action") or "login").strip().lower()
     if action in {"assessment", "analyze", "run_assessment"}:
         user = _user_from_optional_session(session_token)
         _ensure_permission(user, "can_assess")
         payload = AnalyzeMigrationJsonRequest.model_validate(request)
         return await _run_assessment_from_json_payload(payload)
+    if action in {"rebuild", "rebuild_assessment"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_assess")
+        payload = RebuildAssessmentRequest.model_validate(request)
+        return _rebuild_assessment_result(payload)
+    if action in {"diagram_png", "download_diagram"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_view")
+        payload = DiagramImageRequest.model_validate(request)
+        return _diagram_png_response(payload)
+    if action in {"report_pdf", "download_pdf"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_view")
+        payload = PdfReportRequest.model_validate(request)
+        return await _pdf_report_response(payload)
+    if action in {"agent_ask", "ask_agent"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_view")
+        payload = MigrationAgentChatRequest.model_validate(request)
+        return await _agent_chat_response(payload)
 
     login_request = AuthLoginRequest.model_validate(request)
     return _create_session_response(login_request, response)
@@ -262,6 +282,10 @@ async def rebuild_assessment(
 ) -> AnalyzeMigrationResponse:
     """Rebuild mappings, target architecture, report, and insights after user edits."""
 
+    return _rebuild_assessment_result(request)
+
+
+def _rebuild_assessment_result(request: RebuildAssessmentRequest) -> AnalyzeMigrationResponse:
     try:
         goals = _goals_with_variant(request.goals, request.architecture_variant)
         source_architecture = _source_with_provider_hint(
@@ -290,6 +314,10 @@ async def download_report_pdf(
     request: PdfReportRequest,
     _user: AuthUser = Depends(require_permission("can_view")),
 ) -> Response:
+    return await _pdf_report_response(request)
+
+
+async def _pdf_report_response(request: PdfReportRequest) -> Response:
     rendered_diagram_png: bytes | None = None
     rendered_diagram_title = "Generated Architecture Diagram"
     mermaid_diagram_png = None
@@ -352,6 +380,10 @@ async def download_aws_diagram(
     request: DiagramImageRequest,
     _user: AuthUser = Depends(require_permission("can_view")),
 ) -> Response:
+    return _diagram_png_response(request)
+
+
+def _diagram_png_response(request: DiagramImageRequest) -> Response:
     try:
         png_bytes = generate_aws_diagram_png(request.target_architecture)
     except RuntimeError as exc:
@@ -371,6 +403,10 @@ async def ask_migration_agent(
     request: MigrationAgentChatRequest,
     _user: AuthUser = Depends(require_permission("can_view")),
 ) -> MigrationAgentChatResponse:
+    return await _agent_chat_response(request)
+
+
+async def _agent_chat_response(request: MigrationAgentChatRequest) -> MigrationAgentChatResponse:
     try:
         return await answer_migration_question(request)
     except Exception as exc:

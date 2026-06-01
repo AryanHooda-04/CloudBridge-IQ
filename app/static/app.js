@@ -530,11 +530,12 @@ downloadPdfButton.addEventListener("click", async () => {
   try {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-    const response = await apiFetch(`${API_BASE}/api/report/pdf`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
+        action: "report_pdf",
         filename: "migration-assessment.pdf",
         markdown_report: buildExportMarkdown(),
         source_provider: latestResult.source_architecture?.provider || sourceProvider.value,
@@ -579,10 +580,11 @@ downloadDiagramButton.addEventListener("click", async () => {
   const original = downloadDiagramButton.textContent;
   downloadDiagramButton.textContent = "...";
   try {
-    const response = await apiFetch(`${API_BASE}/api/diagram/png`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "diagram_png",
         filename: `${targetProvider.value || "target"}-architecture.png`,
         target_architecture: latestResult.target_architecture,
       }),
@@ -956,10 +958,11 @@ async function askMigrationAgent() {
   });
 
   try {
-    const response = await apiFetch(`${API_BASE}/api/agent/ask`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "agent_ask",
         question,
         assessment: latestResult,
         chat_history: agentChatHistory.slice(-10),
@@ -3093,10 +3096,11 @@ async function renderDiagramImage(payload) {
   });
 
   try {
-    const response = await apiFetch(`${API_BASE}/api/diagram/png`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "diagram_png",
         filename: `${payload.target_architecture.provider || "target"}-architecture.png`,
         target_architecture: payload.target_architecture,
       }),
@@ -3624,10 +3628,11 @@ async function rebuildFromEditedSource() {
   startAssessmentTimeline();
   resultTitle.textContent = "Rebuilding";
   try {
-    const response = await apiFetch(`${API_BASE}/api/assessment/rebuild`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "rebuild",
         source_architecture: latestResult.source_architecture,
         source_provider: sourceProvider.value,
         target_provider: targetProvider.value,
