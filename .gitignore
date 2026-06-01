@@ -10,6 +10,8 @@ __pycache__/
 
 *.log
 uvicorn*.log
+data/*.sqlite3
+data/*.sqlite3-*
 
 .venv/
 venv/

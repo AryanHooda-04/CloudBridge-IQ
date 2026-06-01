@@ -30,6 +30,13 @@ class Settings(BaseModel):
     auth_admin_password: str | None = Field(default=None)
     auth_default_role: str = Field(default="reviewer")
     auth_session_hours: int = Field(default=8)
+    database_path: str = Field(default="data/cloudbridge_iq.sqlite3")
+    sso_provider: str = Field(default="microsoft_entra_id")
+    sso_enabled: bool = Field(default=False)
+    sso_tenant_id: str | None = Field(default=None)
+    sso_client_id: str | None = Field(default=None)
+    sso_client_secret: str | None = Field(default=None)
+    sso_redirect_uri: str = Field(default="http://127.0.0.1:8000/auth/sso/callback")
 
     @property
     def has_openai_key(self) -> bool:
@@ -73,6 +80,16 @@ def get_settings() -> Settings:
         auth_admin_password=os.getenv("AUTH_ADMIN_PASSWORD") or None,
         auth_default_role=os.getenv("AUTH_DEFAULT_ROLE", "reviewer"),
         auth_session_hours=int(os.getenv("AUTH_SESSION_HOURS", "8")),
+        database_path=os.getenv("DATABASE_PATH", "data/cloudbridge_iq.sqlite3"),
+        sso_provider=os.getenv("SSO_PROVIDER", "microsoft_entra_id"),
+        sso_enabled=os.getenv("SSO_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"},
+        sso_tenant_id=os.getenv("SSO_TENANT_ID") or None,
+        sso_client_id=os.getenv("SSO_CLIENT_ID") or None,
+        sso_client_secret=os.getenv("SSO_CLIENT_SECRET") or None,
+        sso_redirect_uri=os.getenv(
+            "SSO_REDIRECT_URI",
+            "http://127.0.0.1:8000/auth/sso/callback",
+        ),
     )
 
 

@@ -5209,3 +5209,85 @@ textarea {
     transform: rotate(90deg);
   }
 }
+
+.cost-calculator-panel,
+.gate-evidence {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 251, 245, 0.94), rgba(246, 250, 255, 0.94));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.cost-calculator-panel {
+  margin: 18px 0;
+  padding: 18px;
+}
+
+.section-header.compact {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.section-header.compact h3 {
+  font-size: 17px;
+  margin: 2px 0 0;
+}
+
+.cost-input-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.cost-input-grid label,
+.cost-notes,
+.gate-evidence label {
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.cost-input-grid input,
+.cost-notes textarea,
+.gate-evidence textarea,
+.gate-evidence input {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--ink);
+  font: inherit;
+  padding: 10px 12px;
+}
+
+.cost-notes {
+  margin-top: 12px;
+}
+
+.cost-notes textarea,
+.gate-evidence textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.gate-evidence {
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.gate-evidence-actions {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 8px;
+}
+
+.gate-evidence small {
+  color: var(--muted);
+  display: block;
+  margin-top: 8px;
+}

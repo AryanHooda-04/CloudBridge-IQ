@@ -83,6 +83,7 @@ let latestDiagramUrl = null;
 let mermaidModulePromise = null;
 let mermaidRenderSequence = 0;
 let selectedHistoryId = null;
+let selectedEnterpriseAssessmentId = null;
 let viewMode = "executive";
 let timelineTimer = null;
 let timelineIndex = 0;
@@ -99,6 +100,7 @@ let reviewState = {
   projectName: "",
   reviewer: "",
   sectionComments: {},
+  evidence: {},
 };
 
 const TIMELINE_STEPS = [
@@ -280,6 +282,18 @@ document.addEventListener("click", async (event) => {
   const canvasNode = event.target.closest("[data-arch-node]");
   if (canvasNode) {
     selectCanvasComponent(canvasNode.dataset.archNode);
+    return;
+  }
+
+  const evidenceAction = event.target.closest("[data-evidence-action]");
+  if (evidenceAction) {
+    await attachGateEvidence(evidenceAction.dataset.gateKey || "");
+    return;
+  }
+
+  const costAction = event.target.closest("[data-cost-model-action]");
+  if (costAction) {
+    await saveCalculatorCostModel();
   }
 });
 
@@ -361,7 +375,7 @@ document.addEventListener("input", (event) => {
   }
 });
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   if (!(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) {
     return;
   }
@@ -381,6 +395,7 @@ document.addEventListener("change", (event) => {
       reviewState.reviewed = ["reviewed", "approved"].includes(workflowStatus.value);
     }
     updateSelectedHistoryReviewState();
+    await persistReviewStateToSql();
     syncAppFrame();
     if (latestResult) {
       refreshReviewStatusViews(latestResult);
@@ -479,6 +494,7 @@ form.addEventListener("submit", async (event) => {
       throw new Error(payload.detail || "Migration analysis failed.");
     }
     selectedHistoryId = null;
+    selectedEnterpriseAssessmentId = null;
     reviewState = {
       reviewed: false,
       status: "needs_review",
@@ -487,6 +503,7 @@ form.addEventListener("submit", async (event) => {
       projectName: projectNameInput.value || buildHistoryTitle(payload),
       reviewer: reviewerNameInput.value || "",
       sectionComments: {},
+      evidence: {},
     };
     syncReviewMetadataInputs();
     workflowStatus.value = reviewState.status;
@@ -623,7 +640,7 @@ downloadDiagramButton.addEventListener("click", async () => {
   }
 });
 
-saveAssessmentButton.addEventListener("click", () => {
+saveAssessmentButton.addEventListener("click", async () => {
   if (!latestResult) {
     return;
   }
@@ -631,11 +648,11 @@ saveAssessmentButton.addEventListener("click", () => {
     showToast("Viewer access cannot save assessment reviews.", "error");
     return;
   }
-  saveCurrentAssessment();
+  await saveCurrentAssessment();
   pulseButton(saveAssessmentButton, "Saved");
 });
 
-markReviewedButton.addEventListener("click", () => {
+markReviewedButton.addEventListener("click", async () => {
   if (!latestResult) {
     return;
   }
@@ -648,6 +665,7 @@ markReviewedButton.addEventListener("click", () => {
   workflowStatus.value = reviewState.status;
   markReviewedButton.textContent = reviewState.reviewed ? "Reviewed" : "Mark";
   updateSelectedHistoryReviewState();
+  await persistReviewStateToSql();
   syncAppFrame();
   refreshReviewStatusViews(latestResult);
 });
@@ -1864,6 +1882,8 @@ function renderCost(payload) {
         <p>Temporary overlap for source and target environments during validation and cutover.</p>
       </section>
     </div>
+    ${renderCostCalculator(estimate)}
+    ${renderSavedCostModel(payload)}
     <div class="chart-board compact cost-score-board">
       ${["cost_predictability", "operational_readiness", "overall_readiness"]
         .map((key) => scores[key])
@@ -1922,6 +1942,136 @@ function renderSavingsCard(estimate) {
   `;
 }
 
+function renderCostCalculator(estimate) {
+  const sourceBaseline = Math.round((estimate.sourceMonthlyLow + estimate.sourceMonthlyHigh) / 2) || 0;
+  const targetBaseline = Math.round((estimate.monthlyLow + estimate.monthlyHigh) / 2) || 0;
+  return `
+    <section class="cost-calculator-panel">
+      <div class="section-header compact">
+        <div>
+          <p class="eyebrow">Calculator-Style Cost Model</p>
+          <h3>Replace directional estimates with workload inputs</h3>
+        </div>
+        <button type="button" data-cost-model-action="save">Save Cost Model</button>
+      </div>
+      <div class="cost-input-grid">
+        ${costInput("source_monthly_baseline", "Source monthly baseline", sourceBaseline)}
+        ${costInput("compute_instances", "Compute instances", 4)}
+        ${costInput("avg_compute_monthly", "Avg compute / month", Math.max(250, Math.round(targetBaseline * 0.22)))}
+        ${costInput("storage_gb", "Storage GB", 1000)}
+        ${costInput("data_transfer_gb", "Data transfer GB", 500)}
+        ${costInput("database_monthly", "Database / analytics", Math.max(0, Math.round(targetBaseline * 0.28)))}
+        ${costInput("licensing_monthly", "Licensing", 0)}
+        ${costInput("support_monthly", "Support", Math.max(0, Math.round(targetBaseline * 0.08)))}
+        ${costInput("observability_monthly", "Observability", Math.max(0, Math.round(targetBaseline * 0.06)))}
+        ${costInput("discount_percent", "Discount %", 0)}
+        ${costInput("migration_months", "Dual-run months", 2)}
+      </div>
+      <label class="cost-notes">
+        Cost model notes
+        <textarea data-cost-input="notes" placeholder="Sizing assumptions, pricing calculator link, reservation or commitment notes"></textarea>
+      </label>
+      <p class="muted">Saved cost models go into the SQL audit store and should be based on inventory, usage, data transfer, licensing, and support assumptions.</p>
+    </section>
+  `;
+}
+
+function renderSavedCostModel(payload) {
+  const model = payload?.enterprise_cost_model;
+  if (!model) {
+    return "";
+  }
+  return `
+    <section class="cost-calculator-panel saved-cost-model">
+      <div class="section-header compact">
+        <div>
+          <p class="eyebrow">Saved SQL Cost Model</p>
+          <h3>${formatDollar(model.monthly_target_estimate)} monthly target</h3>
+        </div>
+        <span class="status-badge recommended">Audited</span>
+      </div>
+      <div class="cost-estimate-board">
+        <section class="cost-estimate-card">
+          <p class="eyebrow">Source baseline</p>
+          <h3>${formatDollar(model.source_monthly_baseline)}</h3>
+        </section>
+        <section class="cost-estimate-card savings-estimate positive">
+          <p class="eyebrow">Monthly savings</p>
+          <h3>${formatDollar(model.estimated_monthly_savings)}</h3>
+        </section>
+        <section class="cost-estimate-card">
+          <p class="eyebrow">Annual savings</p>
+          <h3>${formatDollar(model.estimated_annual_savings)}</h3>
+        </section>
+        <section class="cost-estimate-card">
+          <p class="eyebrow">Dual-run reserve</p>
+          <h3>${formatDollar(model.dual_run_reserve)}</h3>
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function costInput(name, label, value) {
+  return `
+    <label>
+      ${escapeHtml(label)}
+      <input type="number" min="0" step="0.01" data-cost-input="${escapeAttribute(name)}" value="${escapeAttribute(value)}" />
+    </label>
+  `;
+}
+
+async function saveCalculatorCostModel() {
+  if (!hasPermission("can_review")) {
+    showToast("Viewer access cannot save cost models.", "error");
+    return;
+  }
+  try {
+    const assessmentId = await ensureEnterpriseAssessmentSaved();
+    const response = await apiFetch(`${API_BASE}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save_cost_model",
+        assessment_id: assessmentId,
+        cost_model: collectCostModelInput(),
+      }),
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Cost model save failed.");
+    }
+    latestResult.enterprise_cost_model = payload;
+    costPanel.innerHTML = renderCost(latestResult);
+    showToast(
+      `Cost model saved. Target: ${formatDollar(payload.monthly_target_estimate)} / month, savings: ${formatDollar(payload.estimated_monthly_savings)} / month.`,
+      "success",
+    );
+  } catch (error) {
+    showToast(error.message || "Cost model save failed.", "error");
+  }
+}
+
+function collectCostModelInput() {
+  const values = {};
+  document.querySelectorAll("[data-cost-input]").forEach((input) => {
+    const key = input.dataset.costInput;
+    if (!key) {
+      return;
+    }
+    if (input instanceof HTMLTextAreaElement) {
+      values[key] = input.value.trim() || null;
+    } else {
+      values[key] = Number(input.value || 0);
+    }
+  });
+  return values;
+}
+
+function formatDollar(value) {
+  return `$${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
 function renderReviewPanel(payload) {
   const review = payload.assessment_insights?.review || {};
   const checklist = review.decision_gate_checklist || [];
@@ -1967,15 +2117,38 @@ function renderDecisionGate(payload) {
   const gateReady = !approvalBlocked && readiness?.value >= 70 && checklist.every((item) => item.status !== "required") && !warnings.length;
   const rows = checklist
     .map(
-      (item) => `
+      (item, index) => {
+        const gateKey = gateItemKey(item.item, index);
+        const evidenceItems = reviewState.evidence?.[gateKey] || [];
+        return `
         <div class="gate-row ${escapeHtml(item.status)}">
           <span></span>
           <div>
             <strong>${escapeHtml(item.item)}</strong>
             <p>${escapeHtml(item.evidence)}</p>
+            <div class="gate-evidence">
+              <label>
+                Evidence
+                <textarea data-evidence-content="${escapeAttribute(gateKey)}" placeholder="Paste approval evidence, cost model link, test result, or runbook note">${escapeHtml(
+                  evidenceItems[0]?.content || "",
+                )}</textarea>
+              </label>
+              <div class="gate-evidence-actions">
+                <input data-evidence-title="${escapeAttribute(gateKey)}" value="${escapeAttribute(
+                  evidenceItems[0]?.title || `${item.item} evidence`,
+                )}" />
+                <button type="button" data-evidence-action="attach" data-gate-key="${escapeAttribute(gateKey)}">Attach Evidence</button>
+              </div>
+              ${
+                evidenceItems.length
+                  ? `<small>${evidenceItems.length} evidence item${evidenceItems.length === 1 ? "" : "s"} attached in SQL audit store.</small>`
+                  : "<small>No evidence attached yet.</small>"
+              }
+            </div>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 
@@ -3651,12 +3824,13 @@ async function rebuildFromEditedSource() {
   }
 }
 
-function saveCurrentAssessment() {
+async function saveCurrentAssessment() {
   const history = loadHistory();
   const title = projectNameInput.value.trim() || buildHistoryTitle(latestResult);
   const existingVersions = history.filter((item) => (item.projectName || item.title) === title).length;
   const record = {
     id: selectedHistoryId || `assessment_${Date.now()}`,
+    enterpriseId: selectedEnterpriseAssessmentId || null,
     created_at: new Date().toISOString(),
     last_modified_at: new Date().toISOString(),
     title,
@@ -3669,6 +3843,7 @@ function saveCurrentAssessment() {
     notes: architectNotes.value,
     comments: reviewComments.value,
     sectionComments: reviewState.sectionComments || {},
+    evidence: reviewState.evidence || {},
     status: reviewState.status,
     variant: architectureVariant.value,
     pattern: architecturePattern.value,
@@ -3683,7 +3858,45 @@ function saveCurrentAssessment() {
   selectedHistoryId = record.id;
   renderHistory();
   syncAppFrame();
-  showToast("Assessment saved to local history.", "success");
+  try {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "save_assessment",
+        assessment_id: selectedEnterpriseAssessmentId,
+        title,
+        project_name: title,
+        reviewer: reviewerNameInput.value.trim() || null,
+        status: reviewState.status,
+        assessment: latestResult,
+        review_state: {
+          reviewed: reviewState.reviewed,
+          status: reviewState.status,
+          notes: architectNotes.value,
+          comments: reviewComments.value,
+          sectionComments: reviewState.sectionComments || {},
+          evidence: reviewState.evidence || {},
+        },
+        cost_model: latestResult?.enterprise_cost_model || null,
+      }),
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "SQL save failed.");
+    }
+    selectedEnterpriseAssessmentId = payload.assessment_id;
+    record.enterpriseId = payload.assessment_id;
+    record.version = payload.version || record.version;
+    const syncedHistory = loadHistory().map((item) =>
+      item.id === record.id ? { ...item, enterpriseId: payload.assessment_id, version: record.version } : item,
+    );
+    persistHistory(syncedHistory);
+    renderHistory();
+    showToast("Assessment saved to SQL history and audit log.", "success");
+  } catch (error) {
+    showToast(error.message || "Saved locally, but SQL persistence failed.", "error");
+  }
 }
 
 function openHistoryItem(id) {
@@ -3692,6 +3905,7 @@ function openHistoryItem(id) {
     return;
   }
   selectedHistoryId = record.id;
+  selectedEnterpriseAssessmentId = record.enterpriseId || null;
   latestResult = record.result;
   reviewState = {
     reviewed: Boolean(record.reviewed),
@@ -3701,6 +3915,7 @@ function openHistoryItem(id) {
     projectName: record.projectName || record.title || "",
     reviewer: record.reviewer || "",
     sectionComments: record.sectionComments || {},
+    evidence: record.evidence || {},
   };
   syncReviewMetadataInputs();
   workflowStatus.value = reviewState.status;
@@ -3778,11 +3993,43 @@ function updateSelectedHistoryReviewState() {
       projectName: projectNameInput.value,
       reviewer: reviewerNameInput.value,
       sectionComments: reviewState.sectionComments || {},
+      evidence: reviewState.evidence || {},
+      enterpriseId: selectedEnterpriseAssessmentId || item.enterpriseId || null,
       last_modified_at: new Date().toISOString(),
     };
   });
   persistHistory(nextHistory);
   renderHistory();
+}
+
+async function persistReviewStateToSql() {
+  if (!selectedEnterpriseAssessmentId || !hasPermission("can_review")) {
+    return;
+  }
+  try {
+    const response = await apiFetch(`${API_BASE}/api/assessments/${encodeURIComponent(selectedEnterpriseAssessmentId)}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: reviewState.status,
+        reviewer: reviewerNameInput.value.trim() || null,
+        review_state: {
+          reviewed: reviewState.reviewed,
+          status: reviewState.status,
+          notes: architectNotes.value,
+          comments: reviewComments.value,
+          sectionComments: reviewState.sectionComments || {},
+          evidence: reviewState.evidence || {},
+        },
+      }),
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Review status persistence failed.");
+    }
+  } catch (error) {
+    showToast(error.message || "Review status saved locally but not in SQL.", "error");
+  }
 }
 
 function renderHistory() {
@@ -3809,6 +4056,95 @@ function renderHistory() {
       `,
     )
     .join("");
+}
+
+function gateItemKey(label, index = 0) {
+  return String(label || `gate_${index}`)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || `gate_${index}`;
+}
+
+async function ensureEnterpriseAssessmentSaved() {
+  if (!latestResult) {
+    throw new Error("Run an assessment first.");
+  }
+  if (!selectedEnterpriseAssessmentId) {
+    await saveCurrentAssessment();
+  }
+  if (!selectedEnterpriseAssessmentId) {
+    throw new Error("Save the assessment before attaching enterprise evidence.");
+  }
+  return selectedEnterpriseAssessmentId;
+}
+
+async function attachGateEvidence(gateKey) {
+  if (!hasPermission("can_review")) {
+    showToast("Viewer access cannot attach decision evidence.", "error");
+    return;
+  }
+  const selectorKey = selectorValue(gateKey);
+  const contentInput = document.querySelector(`[data-evidence-content="${selectorKey}"]`);
+  const titleInput = document.querySelector(`[data-evidence-title="${selectorKey}"]`);
+  const content = (contentInput?.value || "").trim();
+  const title = (titleInput?.value || "Decision gate evidence").trim();
+  if (!content) {
+    showToast("Add evidence text or a reference before attaching.", "error");
+    return;
+  }
+  try {
+    const assessmentId = await ensureEnterpriseAssessmentSaved();
+    const response = await apiFetch(`${API_BASE}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "add_evidence",
+        assessment_id: assessmentId,
+        evidence: {
+          gate_key: gateKey,
+          title,
+          evidence_type: inferEvidenceType(gateKey, content),
+          content,
+        },
+      }),
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Evidence save failed.");
+    }
+    reviewState.evidence = reviewState.evidence || {};
+    reviewState.evidence[gateKey] = [payload, ...(reviewState.evidence[gateKey] || [])];
+    updateSelectedHistoryReviewState();
+    if (latestResult) {
+      gatePanel.innerHTML = renderDecisionGate(latestResult);
+      renderReviewPanel(latestResult);
+    }
+    showToast("Decision evidence attached and audited.", "success");
+  } catch (error) {
+    showToast(error.message || "Evidence save failed.", "error");
+  }
+}
+
+function inferEvidenceType(gateKey, content) {
+  const text = `${gateKey} ${content}`.toLowerCase();
+  if (/cost|estimate|calculator|pricing/.test(text)) {
+    return "cost_model";
+  }
+  if (/runbook|rollback|cutover/.test(text)) {
+    return "runbook";
+  }
+  if (/test|rehears|failover|validated|passed/.test(text)) {
+    return "test_result";
+  }
+  if (/https?:\/\//.test(text)) {
+    return "link";
+  }
+  return "note";
+}
+
+function selectorValue(value) {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 function syncReviewMetadataInputs() {
@@ -3876,6 +4212,17 @@ function buildExportMarkdown() {
   }
   additions.push(`- **Migration project estimate:** ${formatCurrencyRange(estimate.projectLow, estimate.projectHigh)}`);
   additions.push(`- **Dual-run reserve:** ${formatCurrencyRange(estimate.dualRunLow, estimate.dualRunHigh)}`);
+  if (latestResult.enterprise_cost_model) {
+    const model = latestResult.enterprise_cost_model;
+    additions.push("");
+    additions.push("### Saved Calculator Cost Model");
+    additions.push("");
+    additions.push(`- **Source monthly baseline:** ${formatDollar(model.source_monthly_baseline)}`);
+    additions.push(`- **Target monthly estimate:** ${formatDollar(model.monthly_target_estimate)}`);
+    additions.push(`- **Estimated monthly savings:** ${formatDollar(model.estimated_monthly_savings)}`);
+    additions.push(`- **Estimated annual savings:** ${formatDollar(model.estimated_annual_savings)}`);
+    additions.push(`- **Dual-run reserve:** ${formatDollar(model.dual_run_reserve)}`);
+  }
   if (architectNotes.value.trim()) {
     additions.push(`- **Architect notes:** ${architectNotes.value.trim()}`);
   }

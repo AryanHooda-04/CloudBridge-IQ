@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -18,15 +19,26 @@ from app.config import get_settings
 from app.schemas import (
     AnalyzeMigrationJsonRequest,
     AnalyzeMigrationResponse,
+    AssessmentRecord,
+    AssessmentSummary,
+    AuditEventRecord,
     AuthLoginRequest,
     AuthSessionResponse,
     AuthUser,
+    CostModelInput,
+    CostModelResponse,
     DiagramImageRequest,
+    EvidenceCreateRequest,
+    EvidenceRecord,
     MigrationAssessmentReport,
     MigrationAgentChatRequest,
     MigrationAgentChatResponse,
     PdfReportRequest,
+    PersistAssessmentRequest,
+    PersistAssessmentResponse,
     RebuildAssessmentRequest,
+    ReviewStateUpdateRequest,
+    SsoReadinessResponse,
     SourceArchitecture,
 )
 from app.services.auth import (
@@ -42,6 +54,18 @@ from app.services.architecture_generator import generate_target_architecture
 from app.services.assessment_insights import build_assessment_insights
 from app.services.aws_diagram_generator import generate_aws_diagram_png
 from app.services.cloud_mapping import map_services
+from app.services.enterprise_store import (
+    add_evidence,
+    initialize_enterprise_store,
+    list_assessments,
+    list_audit_events,
+    list_evidence,
+    save_assessment,
+    save_cost_model,
+    update_review_state,
+    write_audit_event,
+    get_assessment as load_assessment_record,
+)
 from app.services.mermaid_generator import generate_mermaid_diagram
 from app.services.migration_strategy import (
     generate_benefits,
@@ -59,10 +83,18 @@ from app.services.report_generator import build_report
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    initialize_enterprise_store()
+    yield
+
+
 app = FastAPI(
     title="Cloud Migration Assessment Agent",
     version="0.1.0",
     description="Analyze cloud architecture diagrams and generate migration assessments.",
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -113,12 +145,35 @@ async def create_session_or_command(
         user = _user_from_optional_session(session_token)
         _ensure_permission(user, "can_assess")
         payload = AnalyzeMigrationJsonRequest.model_validate(request)
-        return await _run_assessment_from_json_payload(payload)
+        result = await _run_assessment_from_json_payload(payload)
+        write_audit_event(
+            user=user,
+            action="assessment.generated",
+            details={
+                "filename": payload.filename,
+                "source_provider": result.source_architecture.provider,
+                "target_provider": result.target_architecture.provider,
+                "mappings": len(result.service_mappings),
+                "verdict": result.final_verdict.recommendation,
+            },
+        )
+        return result
     if action in {"rebuild", "rebuild_assessment"}:
         user = _user_from_optional_session(session_token)
         _ensure_permission(user, "can_assess")
         payload = RebuildAssessmentRequest.model_validate(request)
-        return _rebuild_assessment_result(payload)
+        result = _rebuild_assessment_result(payload)
+        write_audit_event(
+            user=user,
+            action="assessment.rebuilt",
+            details={
+                "source_provider": result.source_architecture.provider,
+                "target_provider": result.target_architecture.provider,
+                "mappings": len(result.service_mappings),
+                "verdict": result.final_verdict.recommendation,
+            },
+        )
+        return result
     if action in {"diagram_png", "download_diagram"}:
         user = _user_from_optional_session(session_token)
         _ensure_permission(user, "can_view")
@@ -134,6 +189,33 @@ async def create_session_or_command(
         _ensure_permission(user, "can_view")
         payload = MigrationAgentChatRequest.model_validate(request)
         return await _agent_chat_response(payload)
+    if action in {"save_assessment", "persist_assessment"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_review")
+        payload = PersistAssessmentRequest.model_validate(request)
+        return save_assessment(payload, user=user, assessment_id=request.get("assessment_id"))
+    if action in {"save_cost_model", "cost_model"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_review")
+        assessment_id = str(request.get("assessment_id") or "").strip()
+        if not assessment_id:
+            raise HTTPException(status_code=400, detail="assessment_id is required.")
+        payload = CostModelInput.model_validate(request.get("cost_model") or request)
+        try:
+            return save_cost_model(assessment_id, payload, user=user)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+    if action in {"add_evidence", "evidence"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_review")
+        assessment_id = str(request.get("assessment_id") or "").strip()
+        if not assessment_id:
+            raise HTTPException(status_code=400, detail="assessment_id is required.")
+        payload = EvidenceCreateRequest.model_validate(request.get("evidence") or request)
+        try:
+            return add_evidence(assessment_id, payload, user=user)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Assessment not found.") from exc
 
     login_request = AuthLoginRequest.model_validate(request)
     return _create_session_response(login_request, response)
@@ -179,6 +261,119 @@ async def current_session(
     user: Annotated[AuthUser, Depends(get_current_user)],
 ) -> AuthSessionResponse:
     return AuthSessionResponse(user=user)
+
+
+@app.get("/api/sso/readiness", response_model=SsoReadinessResponse)
+async def sso_readiness() -> SsoReadinessResponse:
+    settings = get_settings()
+    return SsoReadinessResponse(
+        enabled=settings.sso_enabled,
+        provider=settings.sso_provider,
+        redirect_uri=settings.sso_redirect_uri,
+        required_environment=[
+            "SSO_ENABLED=true",
+            "SSO_PROVIDER=microsoft_entra_id",
+            "SSO_TENANT_ID=<tenant-id>",
+            "SSO_CLIENT_ID=<app-registration-client-id>",
+            "SSO_CLIENT_SECRET=<client-secret>",
+            "SSO_REDIRECT_URI=<public-url>/auth/sso/callback",
+        ],
+        notes=[
+            "Create an app registration in Microsoft Entra ID.",
+            "Add the redirect URI shown here as a Web redirect URI.",
+            "Add a client secret and store it as an environment variable.",
+            "Map group or email claims to CloudBridge IQ roles.",
+            "Keep local signed-cookie auth enabled as a break-glass fallback until SSO is verified.",
+        ],
+    )
+
+
+@app.post("/api/assessments", response_model=PersistAssessmentResponse)
+async def persist_assessment(
+    request: PersistAssessmentRequest,
+    user: AuthUser = Depends(require_permission("can_review")),
+) -> PersistAssessmentResponse:
+    return save_assessment(request, user=user)
+
+
+@app.get("/api/assessments", response_model=list[AssessmentSummary])
+async def saved_assessments(
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> list[AssessmentSummary]:
+    return list_assessments()
+
+
+@app.get("/api/assessments/{assessment_id}", response_model=AssessmentRecord)
+async def saved_assessment(
+    assessment_id: str,
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> AssessmentRecord:
+    try:
+        return load_assessment_record(assessment_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.post("/api/assessments/{assessment_id}/review", response_model=AssessmentRecord)
+async def persist_review_state(
+    assessment_id: str,
+    request: ReviewStateUpdateRequest,
+    user: AuthUser = Depends(require_permission("can_review")),
+) -> AssessmentRecord:
+    try:
+        return update_review_state(assessment_id, request, user=user)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.post("/api/assessments/{assessment_id}/evidence", response_model=EvidenceRecord)
+async def persist_evidence(
+    assessment_id: str,
+    request: EvidenceCreateRequest,
+    user: AuthUser = Depends(require_permission("can_review")),
+) -> EvidenceRecord:
+    try:
+        return add_evidence(assessment_id, request, user=user)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.get("/api/assessments/{assessment_id}/evidence", response_model=list[EvidenceRecord])
+async def saved_evidence(
+    assessment_id: str,
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> list[EvidenceRecord]:
+    try:
+        return list_evidence(assessment_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.post("/api/assessments/{assessment_id}/cost-model", response_model=CostModelResponse)
+async def persist_cost_model(
+    assessment_id: str,
+    request: CostModelInput,
+    user: AuthUser = Depends(require_permission("can_review")),
+) -> CostModelResponse:
+    try:
+        return save_cost_model(assessment_id, request, user=user)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.get("/api/assessments/{assessment_id}/audit", response_model=list[AuditEventRecord])
+async def saved_audit_events(
+    assessment_id: str,
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> list[AuditEventRecord]:
+    return list_audit_events(assessment_id)
+
+
+@app.get("/api/audit", response_model=list[AuditEventRecord])
+async def enterprise_audit_events(
+    _user: AuthUser = Depends(require_permission("can_admin")),
+) -> list[AuditEventRecord]:
+    return list_audit_events()
 
 
 @app.post("/api/assessment", response_model=AnalyzeMigrationResponse)
