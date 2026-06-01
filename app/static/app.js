@@ -512,11 +512,19 @@ copyReportButton.addEventListener("click", async () => {
   pulseButton(copyReportButton, "Copied");
 });
 
-downloadReportButton.addEventListener("click", () => {
+downloadReportButton.addEventListener("click", async () => {
   if (!latestResult?.markdown_report) {
     return;
   }
-  downloadText("migration-assessment.md", buildExportMarkdown(), "text/markdown");
+  hideError();
+  try {
+    const saved = await downloadText("migration-assessment.md", buildExportMarkdown(), "text/markdown");
+    if (saved) {
+      showToast("Markdown report export started.", "success");
+    }
+  } catch (error) {
+    showError(error.message || "Markdown export failed.");
+  }
 });
 
 downloadPdfButton.addEventListener("click", async () => {
@@ -556,9 +564,11 @@ downloadPdfButton.addEventListener("click", async () => {
       }
       throw new Error(detail);
     }
-    const blob = await response.blob();
-    downloadBlob("migration-assessment.pdf", blob);
-    showToast("PDF report export started.", "success");
+    const blob = await readExpectedBlob(response, "application/pdf", "PDF generation failed.");
+    const saved = await downloadBlob("migration-assessment.pdf", blob);
+    if (saved) {
+      showToast("PDF report export started.", "success");
+    }
   } catch (error) {
     if (error.name === "AbortError") {
       showError("PDF generation timed out after 120 seconds. Try downloading the PNG diagram first, then retry the PDF export.");
@@ -599,9 +609,11 @@ downloadDiagramButton.addEventListener("click", async () => {
       }
       throw new Error(detail);
     }
-    const blob = await response.blob();
-    downloadBlob(`${targetProvider.value || "target"}-architecture.png`, blob);
-    showToast("Architecture PNG export started.", "success");
+    const blob = await readExpectedBlob(response, "image/png", "Architecture PNG generation failed.");
+    const saved = await downloadBlob(`${targetProvider.value || "target"}-architecture.png`, blob);
+    if (saved) {
+      showToast("Architecture PNG export started.", "success");
+    }
   } catch (error) {
     showError(error.message || "AWS diagram generation failed.");
   } finally {
@@ -740,8 +752,12 @@ function compactServerMessage(value) {
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
+    .replace(/&#160;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  if (/Access Denied|Threat Protection|HCLTech/i.test(text)) {
+    return "HCLTech Threat Protection blocked this app request. Refresh the app and retry; if it persists, the Render domain or export response is being blocked by policy.";
+  }
   return text ? text.slice(0, 220) : "";
 }
 
@@ -1636,8 +1652,6 @@ function renderMappings(mappings) {
 
 function renderDiagram(payload) {
   const mermaid = normalizeMermaidSource(payload.mermaid_diagram || "");
-  const mermaidSvgUrl = mermaid ? buildMermaidInkUrl(mermaid, "svg") : "";
-  const mermaidPngUrl = mermaid ? buildMermaidInkUrl(mermaid, "img") : "";
   const targetComponents = payload.target_architecture?.components || [];
   const selectedComponent =
     targetComponents.find((component) => component.id === selectedCanvasComponentId) || targetComponents[0];
@@ -1715,11 +1729,9 @@ function renderDiagram(payload) {
         <div class="diagram-section-header">
           <div>
             <h3>Mermaid Diagram</h3>
-            <p>Rendered preview with direct links for sharing or opening outside the app.</p>
+            <p>Local source preview. External Mermaid render links are disabled to avoid enterprise network blocks.</p>
           </div>
           <div class="diagram-actions">
-            <a class="diagram-link" href="${escapeHtml(mermaidSvgUrl)}" target="_blank" rel="noopener">Open SVG</a>
-            <a class="diagram-link" href="${escapeHtml(mermaidPngUrl)}" target="_blank" rel="noopener">Open PNG</a>
             <button type="button" class="diagram-link" data-copy-mermaid>Copy Source</button>
           </div>
         </div>
@@ -3040,40 +3052,25 @@ async function loadMermaidRenderer() {
     return window.mermaid;
   }
   if (!mermaidModulePromise) {
-    mermaidModulePromise = import("https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs")
-      .then((module) => module.default || module);
+    mermaidModulePromise = Promise.reject(
+      new Error("Mermaid renderer is not bundled in this enterprise build."),
+    );
   }
   return mermaidModulePromise;
 }
 
 function renderMermaidLinkFallback(wrap, mermaidSource, message) {
-  const svgUrl = buildMermaidInkUrl(mermaidSource, "svg");
-  const pngUrl = buildMermaidInkUrl(mermaidSource, "img");
-  const image = new Image();
-  image.className = "mermaid-preview-image";
-  image.alt = "Rendered Mermaid architecture diagram";
-  image.onload = () => {
-    const link = document.createElement("a");
-    link.href = svgUrl;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.appendChild(image);
-    wrap.innerHTML = "";
-    wrap.appendChild(link);
-  };
-  image.onerror = () => {
-    wrap.innerHTML = `
+  wrap.innerHTML = `
       <div class="mermaid-fallback">
-        <strong>Mermaid preview could not render inline.</strong>
+        <strong>Mermaid preview is disabled in this network-safe build.</strong>
         <span>${escapeHtml(message)}</span>
-        <div class="diagram-actions">
-          <a class="diagram-link" href="${escapeHtml(svgUrl)}" target="_blank" rel="noopener">Open SVG</a>
-          <a class="diagram-link" href="${escapeHtml(pngUrl)}" target="_blank" rel="noopener">Open PNG</a>
-        </div>
+        <span>The exported PDF uses the generated architecture diagram instead of external Mermaid rendering.</span>
+        <details class="source-toggle">
+          <summary>View Mermaid source</summary>
+          <pre class="diagram-code">${escapeHtml(mermaidSource)}</pre>
+        </details>
       </div>
     `;
-  };
-  image.src = svgUrl;
 }
 
 async function renderDiagramImage(payload) {
@@ -3502,23 +3499,19 @@ function renderCodeBlock(source, language) {
 
 function renderReportMermaidBlock(source) {
   const mermaid = normalizeMermaidSource(source);
-  const svgUrl = buildMermaidInkUrl(mermaid, "svg");
-  const pngUrl = buildMermaidInkUrl(mermaid, "img");
   return `
     <div class="report-mermaid-block">
       <div class="report-mermaid-header">
         <div>
-          <strong>Rendered Mermaid Diagram</strong>
-          <span>Open it directly or expand the source if you need to edit it.</span>
+          <strong>Mermaid Architecture Source</strong>
+          <span>External Mermaid rendering is disabled. Use the generated diagram block for PDF and PNG exports.</span>
         </div>
         <div class="diagram-actions">
-          <a class="diagram-link" href="${escapeHtml(svgUrl)}" target="_blank" rel="noopener">Open SVG</a>
-          <a class="diagram-link" href="${escapeHtml(pngUrl)}" target="_blank" rel="noopener">Open PNG</a>
           <button type="button" class="diagram-link" data-copy-mermaid>Copy Source</button>
         </div>
       </div>
       <div class="report-mermaid-render" data-report-mermaid-render>
-        <div class="diagram-render-state">Rendering Mermaid diagram</div>
+        <div class="diagram-render-state">Mermaid preview disabled for enterprise network safety.</div>
       </div>
       <details class="source-toggle">
         <summary>View Mermaid source</summary>
@@ -4022,24 +4015,64 @@ function showToast(message, tone = "info") {
   }, 3600);
 }
 
-function downloadText(filename, text, type) {
-  const blob = new Blob([text], { type });
-  downloadBlob(filename, blob);
+async function readExpectedBlob(response, expectedType, fallbackMessage) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes(expectedType.toLowerCase())) {
+    const text = await response.text().catch(() => "");
+    throw new Error(compactServerMessage(text) || fallbackMessage);
+  }
+  return response.blob();
 }
 
-function downloadBlob(filename, blob) {
+async function downloadText(filename, text, type) {
+  const blob = new Blob([text], { type });
+  return downloadBlob(filename, blob);
+}
+
+async function downloadBlob(filename, blob) {
+  const safeFilename = filename || "cloudbridge-export";
+  if (window.showSaveFilePicker && window.isSecureContext) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: safeFilename,
+        types: filePickerTypes(safeFilename, blob.type),
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return false;
+      }
+      console.warn("File picker export failed, falling back to browser download:", error);
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = safeFilename;
   document.body.appendChild(link);
-  link.click();
+  link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
   link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return true;
 }
 
-function buildMermaidInkUrl(source, format) {
-  return `https://mermaid.ink/${format}/${toBase64Url(normalizeMermaidSource(source))}`;
+function filePickerTypes(filename, mimeType) {
+  const extension = filename.split(".").pop()?.toLowerCase() || "txt";
+  const type = mimeType || {
+    pdf: "application/pdf",
+    png: "image/png",
+    md: "text/markdown",
+  }[extension] || "application/octet-stream";
+  return [
+    {
+      description: `${extension.toUpperCase()} file`,
+      accept: { [type]: [`.${extension}`] },
+    },
+  ];
 }
 
 function toBase64Url(value) {
