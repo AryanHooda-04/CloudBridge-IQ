@@ -127,6 +127,16 @@ class RebuildAssessmentRequest(BaseModel):
     architecture_variant: str = "balanced"
 
 
+class AnalyzeMigrationJsonRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=240)
+    content_type: str | None = None
+    file_base64: str = Field(min_length=1)
+    source_provider: str = "auto"
+    target_provider: str = "aws"
+    migration_intent: str | None = None
+    goals: str | None = None
+
+
 class PdfReportRequest(BaseModel):
     markdown_report: str = Field(min_length=1)
     filename: str = "migration-assessment.pdf"

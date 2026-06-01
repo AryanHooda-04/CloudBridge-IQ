@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from app.agents.migration_graph import run_migration_assessment
 from app.config import get_settings
 from app.schemas import (
+    AnalyzeMigrationJsonRequest,
     AnalyzeMigrationResponse,
     AuthLoginRequest,
     AuthSessionResponse,
@@ -149,8 +150,51 @@ async def analyze_migration(
     goals: Annotated[str | None, Form()] = None,
     _user: AuthUser = Depends(require_permission("can_assess")),
 ) -> AnalyzeMigrationResponse:
-    settings = get_settings()
     file_bytes = await file.read()
+    return await _run_assessment_from_upload(
+        file_bytes=file_bytes,
+        filename=file.filename or "architecture-diagram",
+        content_type=file.content_type,
+        source_provider=source_provider,
+        target_provider=target_provider,
+        migration_intent=migration_intent,
+        goals=goals,
+    )
+
+
+@app.post("/api/assessment-json", response_model=AnalyzeMigrationResponse)
+async def analyze_migration_json(
+    request: AnalyzeMigrationJsonRequest,
+    _user: AuthUser = Depends(require_permission("can_assess")),
+) -> AnalyzeMigrationResponse:
+    try:
+        encoded = request.file_base64.split(",", 1)[1] if "," in request.file_base64 else request.file_base64
+        file_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Uploaded file payload is not valid base64.") from exc
+
+    return await _run_assessment_from_upload(
+        file_bytes=file_bytes,
+        filename=request.filename,
+        content_type=request.content_type,
+        source_provider=request.source_provider,
+        target_provider=request.target_provider,
+        migration_intent=request.migration_intent,
+        goals=request.goals,
+    )
+
+
+async def _run_assessment_from_upload(
+    *,
+    file_bytes: bytes,
+    filename: str,
+    content_type: str | None,
+    source_provider: str,
+    target_provider: str,
+    migration_intent: str | None,
+    goals: str | None,
+) -> AnalyzeMigrationResponse:
+    settings = get_settings()
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
     if len(file_bytes) > settings.max_upload_bytes:
@@ -159,8 +203,8 @@ async def analyze_migration(
     try:
         report = await run_migration_assessment(
             file_bytes=file_bytes,
-            filename=file.filename or "architecture-diagram",
-            content_type=file.content_type,
+            filename=filename or "architecture-diagram",
+            content_type=content_type,
             source_provider=source_provider,
             target_provider=target_provider,
             migration_intent=migration_intent,

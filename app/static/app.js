@@ -458,11 +458,19 @@ form.addEventListener("submit", async (event) => {
   resultTitle.textContent = "Analyzing";
 
   try {
-    const formData = new FormData(form);
-    formData.set("goals", goalsWithVariant().join(", "));
-    const response = await apiFetch(`${API_BASE}/api/assessment`, {
+    const fileBase64 = await readFileAsBase64(file);
+    const response = await apiFetch(`${API_BASE}/api/assessment-json`, {
       method: "POST",
-      body: formData,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: file.name || "architecture-diagram",
+        content_type: file.type || null,
+        file_base64: fileBase64,
+        source_provider: sourceProvider.value || "auto",
+        target_provider: targetProvider.value || "aws",
+        migration_intent: migrationIntent.value || null,
+        goals: goalsWithVariant().join(", "),
+      }),
     });
     const payload = await readApiPayload(response);
     if (!response.ok) {
@@ -696,6 +704,18 @@ function apiFetch(url, options = {}) {
   return fetch(url, {
     credentials: "include",
     ...options,
+  });
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      resolve(value.includes(",") ? value.split(",", 2)[1] : value);
+    };
+    reader.onerror = () => reject(new Error("Could not read the selected diagram file."));
+    reader.readAsDataURL(file);
   });
 }
 
