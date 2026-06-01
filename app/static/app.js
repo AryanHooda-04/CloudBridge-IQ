@@ -460,11 +460,11 @@ form.addEventListener("submit", async (event) => {
   try {
     const formData = new FormData(form);
     formData.set("goals", goalsWithVariant().join(", "));
-    const response = await apiFetch(`${API_BASE}/analyze-migration`, {
+    const response = await apiFetch(`${API_BASE}/api/assessment`, {
       method: "POST",
       body: formData,
     });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok) {
       throw new Error(payload.detail || "Migration analysis failed.");
     }
@@ -521,7 +521,7 @@ downloadPdfButton.addEventListener("click", async () => {
   try {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-    const response = await apiFetch(`${API_BASE}/download-report-pdf`, {
+    const response = await apiFetch(`${API_BASE}/api/report/pdf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
@@ -539,7 +539,7 @@ downloadPdfButton.addEventListener("click", async () => {
     if (!response.ok) {
       let detail = "PDF generation failed.";
       try {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         detail = payload.detail || detail;
       } catch {
         detail = response.statusText || detail;
@@ -570,7 +570,7 @@ downloadDiagramButton.addEventListener("click", async () => {
   const original = downloadDiagramButton.textContent;
   downloadDiagramButton.textContent = "...";
   try {
-    const response = await apiFetch(`${API_BASE}/download-aws-diagram`, {
+    const response = await apiFetch(`${API_BASE}/api/diagram/png`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -581,7 +581,7 @@ downloadDiagramButton.addEventListener("click", async () => {
     if (!response.ok) {
       let detail = "AWS diagram generation failed.";
       try {
-        const payload = await response.json();
+        const payload = await readApiPayload(response);
         detail = payload.detail || detail;
       } catch {
         detail = response.statusText || detail;
@@ -935,7 +935,7 @@ async function askMigrationAgent() {
   });
 
   try {
-    const response = await apiFetch(`${API_BASE}/ask-migration-agent`, {
+    const response = await apiFetch(`${API_BASE}/api/agent/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3072,7 +3072,7 @@ async function renderDiagramImage(payload) {
   });
 
   try {
-    const response = await apiFetch(`${API_BASE}/download-aws-diagram`, {
+    const response = await apiFetch(`${API_BASE}/api/diagram/png`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3603,7 +3603,7 @@ async function rebuildFromEditedSource() {
   startAssessmentTimeline();
   resultTitle.textContent = "Rebuilding";
   try {
-    const response = await apiFetch(`${API_BASE}/rebuild-assessment`, {
+    const response = await apiFetch(`${API_BASE}/api/assessment/rebuild`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3615,7 +3615,7 @@ async function rebuildFromEditedSource() {
         architecture_variant: architectureVariant.value,
       }),
     });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok) {
       throw new Error(payload.detail || "Assessment rebuild failed.");
     }

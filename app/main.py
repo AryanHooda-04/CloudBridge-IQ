@@ -139,6 +139,7 @@ async def current_session(
     return AuthSessionResponse(user=user)
 
 
+@app.post("/api/assessment", response_model=AnalyzeMigrationResponse)
 @app.post("/analyze-migration", response_model=AnalyzeMigrationResponse)
 async def analyze_migration(
     file: Annotated[UploadFile, File(description="Architecture diagram image or PDF")],
@@ -176,6 +177,7 @@ async def analyze_migration(
     return _response_from_report(report, goals=_parse_goals(goals))
 
 
+@app.post("/api/assessment/rebuild", response_model=AnalyzeMigrationResponse)
 @app.post("/rebuild-assessment", response_model=AnalyzeMigrationResponse)
 async def rebuild_assessment(
     request: RebuildAssessmentRequest,
@@ -205,6 +207,7 @@ async def rebuild_assessment(
     return _response_from_report(report, goals=goals)
 
 
+@app.post("/api/report/pdf")
 @app.post("/download-report-pdf")
 async def download_report_pdf(
     request: PdfReportRequest,
@@ -266,6 +269,7 @@ async def download_report_pdf(
     )
 
 
+@app.post("/api/diagram/png")
 @app.post("/download-aws-diagram")
 async def download_aws_diagram(
     request: DiagramImageRequest,
@@ -284,6 +288,7 @@ async def download_aws_diagram(
     )
 
 
+@app.post("/api/agent/ask", response_model=MigrationAgentChatResponse)
 @app.post("/ask-migration-agent", response_model=MigrationAgentChatResponse)
 async def ask_migration_agent(
     request: MigrationAgentChatRequest,
