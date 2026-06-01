@@ -62,61 +62,68 @@ def build_assessment_insights(
         ["pub/sub", "pubsub", "eventbridge", "kinesis", "stream", "iot", "dataflow"],
     )
     has_compliance_goal = _contains_any(" ".join(goals), ["compliance", "audit", "regulated", "security"])
-    unknowns = len(report.assumptions) + len(report.source_architecture.missing_information)
+    unknown_items = _unique(
+        [
+            *report.assumptions,
+            *report.source_architecture.missing_information,
+        ]
+    )
+    unknowns = len(unknown_items)
+    low_confidence_points = min(5, (low_confidence_count + 1) // 2)
 
     complexity_points = (
-        (source_components // 4)
-        + (target_components // 6)
-        + low_confidence_count
-        + severity_counts["high"] * 2
+        (source_components // 5)
+        + (target_components // 8)
+        + low_confidence_points
+        + severity_counts["high"]
         + severity_counts["critical"] * 3
         + (2 if has_hybrid else 0)
         + (2 if has_data else 0)
         + (1 if has_streaming else 0)
-        + min(3, unknowns)
+        + min(2, unknowns)
     )
 
     technical_score = _clamp_score(
-        90
-        - complexity_points * 3
-        - low_confidence_count * 6
-        - severity_counts["high"] * 5
+        92
+        - complexity_points * 2
+        - low_confidence_count * 3
+        - severity_counts["high"] * 4
         - severity_counts["critical"] * 10
-        + int(avg_confidence * 8)
+        + int(avg_confidence * 10)
     )
     security_score = _clamp_score(
-        78
+        80
         + _security_control_bonus(report) * 3
         - severity_counts["critical"] * 10
-        - severity_counts["high"] * 4
+        - severity_counts["high"] * 3
         - (6 if has_compliance_goal and unknowns else 0)
     )
     operational_score = _clamp_score(
-        82
-        - complexity_points * 2
-        - low_confidence_count * 5
-        - unknowns * 2
+        84
+        - complexity_points
+        - low_confidence_count * 2
+        - unknowns
         + _operations_control_bonus(report) * 2
     )
     cost_predictability_score = _clamp_score(
-        76
-        - complexity_points * 3
-        - low_confidence_count * 6
-        - (8 if has_data else 0)
-        - (5 if has_hybrid else 0)
+        78
+        - complexity_points * 2
+        - low_confidence_count * 3
+        - (6 if has_data else 0)
+        - (4 if has_hybrid else 0)
     )
     downtime_risk_score = _clamp_score(
-        28
-        + complexity_points * 3
-        + (12 if has_data else 0)
-        + (8 if has_hybrid else 0)
-        + severity_counts["high"] * 4
+        24
+        + complexity_points * 2
+        + (10 if has_data else 0)
+        + (6 if has_hybrid else 0)
+        + severity_counts["high"] * 3
         + severity_counts["critical"] * 8
     )
     compliance_score = _clamp_score(
-        74
+        76
         + _security_control_bonus(report) * 2
-        - unknowns * 3
+        - unknowns * 2
         - (
             6
             if has_compliance_goal
