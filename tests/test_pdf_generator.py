@@ -53,3 +53,37 @@ graph TD
     assert "Generated AWS Architecture Diagram" in text
     assert "Rendered Mermaid Architecture Diagram" not in text
     assert "graph TD" not in text
+
+
+def test_pdf_generator_handles_wide_long_tables():
+    rows = [
+        "# Cloud Migration Assessment Report",
+        "",
+        "## 1. Executive Summary",
+        "This report intentionally contains wide tables and long text for PDF export.",
+        "",
+        "## 4. Source-to-Target Cloud Service Mapping",
+        "| Source Service | Target Service | Reasoning | Confidence | Owner | Decision | Notes |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for index in range(70):
+        rows.append(
+            "| Source "
+            + str(index)
+            + " | Target "
+            + str(index)
+            + " | "
+            + ("Long rationale with networking, security, cost, and operational details. " * 10)
+            + " | 0.82 | Architect | Open | "
+            + ("Review note. " * 14)
+            + " |"
+        )
+
+    pdf = markdown_to_pdf_bytes(
+        "\n".join(rows),
+        source_provider="aws",
+        target_provider="azure",
+    )
+
+    assert pdf.startswith(b"%PDF")
+    assert len(pdf) > 1000

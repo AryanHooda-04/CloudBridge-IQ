@@ -7,6 +7,13 @@ import re
 from io import BytesIO
 
 
+MAX_PDF_LINES = 1400
+MAX_TABLE_ROWS = 36
+MAX_TABLE_CELL_CHARS = 420
+MAX_PARAGRAPH_CHARS = 1800
+MAX_CODE_CHARS = 3600
+
+
 def markdown_to_pdf_bytes(
     markdown: str,
     *,
@@ -183,18 +190,28 @@ def markdown_to_pdf_bytes(
         nonlocal table_rows
         if not table_rows:
             return
-        rows = []
+        raw_rows: list[list[str]] = []
         for row in table_rows:
             if re.match(r"^\|\s*-+", row):
                 continue
             cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
-            rows.append([Paragraph(_inline(cell), styles["table"]) for cell in cells])
-        if rows:
+            if cells:
+                raw_rows.append(cells)
+        if raw_rows:
+            column_count = max(len(row) for row in raw_rows)
+            visible_rows = raw_rows[:MAX_TABLE_ROWS]
+            rows = [
+                [
+                    Paragraph(_inline(_truncate_text(cell, MAX_TABLE_CELL_CHARS)), styles["table"])
+                    for cell in row + [""] * (column_count - len(row))
+                ]
+                for row in visible_rows
+            ]
             table = Table(
                 rows,
                 repeatRows=1,
                 hAlign="LEFT",
-                colWidths=_column_widths(len(rows[0]), doc.width),
+                colWidths=_column_widths(column_count, doc.width),
             )
             table.setStyle(
                 TableStyle(
@@ -211,6 +228,20 @@ def markdown_to_pdf_bytes(
                 )
             )
             story.extend([table, Spacer(1, 8)])
+            omitted = max(0, len(raw_rows) - len(visible_rows))
+            if omitted:
+                story.extend(
+                    [
+                        Paragraph(
+                            _inline(
+                                f"{omitted} additional table rows were omitted from the PDF export. "
+                                "Use Markdown export for the full machine-readable detail."
+                            ),
+                            styles["body"],
+                        ),
+                        Spacer(1, 6),
+                    ]
+                )
         table_rows = []
 
     def add_png_section(png_bytes: bytes | None, title: str, max_height: float) -> bool:
@@ -287,15 +318,16 @@ def markdown_to_pdf_bytes(
                 )
             add_rendered_diagram()
         else:
+            code_text = _truncate_text("\n".join(code_lines), MAX_CODE_CHARS)
             story.extend(
                 [
-                    Preformatted("\n".join(code_lines), styles["code"]),
+                    Preformatted(code_text, styles["code"]),
                     Spacer(1, 8),
                 ]
             )
         code_lines = []
 
-    for line in markdown.splitlines():
+    for line in _bounded_lines(markdown):
         if line.startswith("```"):
             flush_table()
             if in_code:
@@ -327,9 +359,11 @@ def markdown_to_pdf_bytes(
         elif stripped.startswith("### "):
             story.append(Paragraph(_inline(stripped[4:]), styles["section"]))
         elif stripped.startswith("- "):
-            story.append(Paragraph("- " + _inline(stripped[2:]), styles["body"]))
+            story.append(
+                Paragraph("- " + _inline(_truncate_text(stripped[2:], MAX_PARAGRAPH_CHARS)), styles["body"])
+            )
         else:
-            story.append(Paragraph(_inline(stripped), styles["body"]))
+            story.append(Paragraph(_inline(_truncate_text(stripped, MAX_PARAGRAPH_CHARS)), styles["body"]))
 
     flush_table()
     flush_code(code_language)
@@ -461,13 +495,26 @@ def _inline(value: str) -> str:
 
 
 def _column_widths(column_count: int, available_width: float) -> list[float] | None:
+    if column_count <= 0:
+        return None
     if column_count == 4:
         ratios = [0.22, 0.24, 0.42, 0.12]
     elif column_count == 5:
         ratios = [0.18, 0.2, 0.32, 0.1, 0.2]
     else:
-        return None
+        return [available_width / column_count] * column_count
     return [available_width * ratio for ratio in ratios]
+
+
+def _bounded_lines(markdown: str) -> list[str]:
+    lines = markdown.splitlines()
+    if len(lines) <= MAX_PDF_LINES:
+        return lines
+    omitted = len(lines) - MAX_PDF_LINES
+    return lines[:MAX_PDF_LINES] + [
+        "",
+        f"_PDF export truncated {omitted} additional lines. Use Markdown export for the complete report._",
+    ]
 
 
 def _render_mermaid_source_png(source: str) -> bytes | None:
