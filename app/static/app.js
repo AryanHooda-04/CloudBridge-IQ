@@ -46,6 +46,10 @@ const workflowStatus = document.querySelector("#workflowStatus");
 const historyList = document.querySelector("#historyList");
 const reviewPanel = document.querySelector("#reviewPanel");
 const toggleReviewRailButton = document.querySelector("#toggleReviewRailButton");
+const closeReviewRailButton = document.querySelector("#closeReviewRailButton");
+const toggleIntakeButton = document.querySelector("#toggleIntakeButton");
+const collapseIntakeButton = document.querySelector("#collapseIntakeButton");
+const qualityGates = document.querySelector("#qualityGates");
 const projectNameInput = document.querySelector("#projectName");
 const reviewerNameInput = document.querySelector("#reviewerName");
 const assessmentTimeline = document.querySelector("#assessmentTimeline");
@@ -55,9 +59,24 @@ const agentChatLog = document.querySelector("#agentChatLog");
 const agentChatSendButton = document.querySelector("#agentChatSendButton");
 const agentStatus = document.querySelector("#agentStatus");
 const agentSuggestions = document.querySelector(".agent-suggestions");
+const agentClearButton = document.querySelector("#agentClearButton");
+const authOverlay = document.querySelector("#authOverlay");
+const authForm = document.querySelector("#authForm");
+const authDisplayName = document.querySelector("#authDisplayName");
+const authEmail = document.querySelector("#authEmail");
+const authRequestedRole = document.querySelector("#authRequestedRole");
+const authAdminPassword = document.querySelector("#authAdminPassword");
+const authSubmitButton = document.querySelector("#authSubmitButton");
+const authError = document.querySelector("#authError");
+const userChip = document.querySelector("#userChip");
+const userAvatar = document.querySelector("#userAvatar");
+const userRoleLabel = document.querySelector("#userRoleLabel");
+const userDisplayName = document.querySelector("#userDisplayName");
+const logoutButton = document.querySelector("#logoutButton");
 const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
 const HISTORY_KEY = "cloudMigrationAssessments.v2";
 
+let currentUser = null;
 let latestResult = null;
 let latestPreviewUrl = null;
 let latestDiagramUrl = null;
@@ -91,6 +110,7 @@ const TIMELINE_STEPS = [
 ];
 
 checkHealth();
+initializeAuth();
 renderSupportedProviders();
 syncProviderRouteBadges();
 syncAppFrame();
@@ -98,9 +118,12 @@ renderHistory();
 setViewMode(viewMode);
 syncReviewMetadataInputs();
 resetAgentChat();
+syncSnapshotCondensed();
 
-appShell?.classList.add("review-rail-collapsed");
-toggleReviewRailButton?.setAttribute("aria-expanded", "false");
+setReviewRailCollapsed(true);
+
+window.addEventListener("scroll", syncSnapshotCondensed, { passive: true });
+window.addEventListener("resize", syncSnapshotCondensed);
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => activateTab(tab.dataset.tab));
@@ -115,8 +138,28 @@ document.querySelectorAll("[data-view-mode]").forEach((button) => {
 });
 
 toggleReviewRailButton?.addEventListener("click", () => {
-  const collapsed = appShell?.classList.toggle("review-rail-collapsed") ?? false;
-  toggleReviewRailButton.setAttribute("aria-expanded", String(!collapsed));
+  const collapsed = appShell?.classList.contains("review-rail-collapsed") ?? true;
+  setReviewRailCollapsed(!collapsed);
+});
+
+closeReviewRailButton?.addEventListener("click", () => setReviewRailCollapsed(true));
+
+toggleIntakeButton?.addEventListener("click", () => toggleIntakePanel());
+collapseIntakeButton?.addEventListener("click", () => toggleIntakePanel(true));
+
+authForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await signIn();
+});
+
+logoutButton?.addEventListener("click", async () => {
+  try {
+    await apiFetch(`${API_BASE}/auth/logout`, { method: "POST" });
+  } finally {
+    currentUser = null;
+    applyRoleUi();
+    showAuthOverlay("Signed out. Sign in to continue.");
+  }
 });
 
 document.querySelectorAll(".preset-button").forEach((button) => {
@@ -139,6 +182,11 @@ document.querySelectorAll("[data-agent-prompt]").forEach((button) => {
 agentChatForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await askMigrationAgent();
+});
+
+agentClearButton?.addEventListener("click", () => {
+  resetAgentChat(latestResult);
+  showToast("Agent conversation reset.", "success");
 });
 
 agentChatInput?.addEventListener("keydown", async (event) => {
@@ -192,6 +240,10 @@ document.addEventListener("click", async (event) => {
 
   const sourceAction = event.target.closest("[data-source-action]");
   if (sourceAction) {
+    if (!hasPermission("can_assess")) {
+      showToast("Your role cannot edit and rebuild source architecture.", "error");
+      return;
+    }
     const action = sourceAction.dataset.sourceAction;
     if (action === "add") {
       addSourceComponent();
@@ -205,6 +257,10 @@ document.addEventListener("click", async (event) => {
 
   const relationshipAction = event.target.closest("[data-relationship-action]");
   if (relationshipAction) {
+    if (!hasPermission("can_assess")) {
+      showToast("Your role cannot edit architecture relationships.", "error");
+      return;
+    }
     const action = relationshipAction.dataset.relationshipAction;
     if (action === "add") {
       addSourceRelationship();
@@ -265,14 +321,23 @@ document.addEventListener("input", (event) => {
     return;
   }
   if (event.target.matches("[data-component-field]")) {
+    if (!hasPermission("can_assess")) {
+      return;
+    }
     updateSourceComponent(event.target);
     return;
   }
   if (event.target.matches("[data-relationship-field]")) {
+    if (!hasPermission("can_assess")) {
+      return;
+    }
     updateSourceRelationship(event.target);
     return;
   }
   if (event.target.matches("[data-section-comment]")) {
+    if (!hasPermission("can_review")) {
+      return;
+    }
     updateSectionComment(event.target);
     return;
   }
@@ -286,8 +351,12 @@ document.addEventListener("input", (event) => {
     reviewState.comments = reviewComments.value;
     reviewState.projectName = projectNameInput.value;
     reviewState.reviewer = reviewerNameInput.value;
+    promoteReviewAfterArchitectComment(event.target);
     updateSelectedHistoryReviewState();
     syncAppFrame();
+    if (latestResult && (event.target === architectNotes || event.target === reviewComments)) {
+      refreshReviewStatusViews(latestResult);
+    }
   }
 });
 
@@ -296,14 +365,24 @@ document.addEventListener("change", (event) => {
     return;
   }
   if (event.target === workflowStatus) {
-    reviewState.status = workflowStatus.value;
-    reviewState.reviewed = ["reviewed", "approved"].includes(workflowStatus.value);
+    if (!hasPermission("can_architect_review")) {
+      workflowStatus.value = reviewState.status;
+      showToast("Only Aryan or an architect can change workflow status.", "error");
+      return;
+    }
+    if (workflowStatus.value === "approved" && latestResult && hasApprovalBlockers(latestResult)) {
+      workflowStatus.value = "needs_review";
+      reviewState.status = "needs_review";
+      reviewState.reviewed = false;
+      showToast("Approval blocked until quality gate blockers are resolved.", "error");
+    } else {
+      reviewState.status = workflowStatus.value;
+      reviewState.reviewed = ["reviewed", "approved"].includes(workflowStatus.value);
+    }
     updateSelectedHistoryReviewState();
     syncAppFrame();
     if (latestResult) {
-      renderSummary(latestResult);
-      renderReviewPanel(latestResult);
-      gatePanel.innerHTML = renderDecisionGate(latestResult);
+      refreshReviewStatusViews(latestResult);
     }
     return;
   }
@@ -313,6 +392,9 @@ document.addEventListener("change", (event) => {
     return;
   }
   if (event.target.matches("[data-relationship-field]")) {
+    if (!hasPermission("can_assess")) {
+      return;
+    }
     updateSourceRelationship(event.target);
     return;
   }
@@ -360,6 +442,10 @@ dropZone.addEventListener("drop", (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!hasPermission("can_assess")) {
+    showError("Your current role cannot run migration assessments.");
+    return;
+  }
   const file = fileInput.files?.[0];
   if (!file) {
     showError("Select an architecture diagram before running the assessment.");
@@ -374,7 +460,7 @@ form.addEventListener("submit", async (event) => {
   try {
     const formData = new FormData(form);
     formData.set("goals", goalsWithVariant().join(", "));
-    const response = await fetch(`${API_BASE}/analyze-migration`, {
+    const response = await apiFetch(`${API_BASE}/analyze-migration`, {
       method: "POST",
       body: formData,
     });
@@ -435,7 +521,7 @@ downloadPdfButton.addEventListener("click", async () => {
   try {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-    const response = await fetch(`${API_BASE}/download-report-pdf`, {
+    const response = await apiFetch(`${API_BASE}/download-report-pdf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
@@ -484,7 +570,7 @@ downloadDiagramButton.addEventListener("click", async () => {
   const original = downloadDiagramButton.textContent;
   downloadDiagramButton.textContent = "...";
   try {
-    const response = await fetch(`${API_BASE}/download-aws-diagram`, {
+    const response = await apiFetch(`${API_BASE}/download-aws-diagram`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -517,6 +603,10 @@ saveAssessmentButton.addEventListener("click", () => {
   if (!latestResult) {
     return;
   }
+  if (!hasPermission("can_review")) {
+    showToast("Viewer access cannot save assessment reviews.", "error");
+    return;
+  }
   saveCurrentAssessment();
   pulseButton(saveAssessmentButton, "Saved");
 });
@@ -525,14 +615,17 @@ markReviewedButton.addEventListener("click", () => {
   if (!latestResult) {
     return;
   }
+  if (!hasPermission("can_architect_review")) {
+    showToast("Only Aryan or an architect can mark architect review.", "error");
+    return;
+  }
   reviewState.reviewed = !reviewState.reviewed;
   reviewState.status = reviewState.reviewed ? "reviewed" : "needs_review";
   workflowStatus.value = reviewState.status;
   markReviewedButton.textContent = reviewState.reviewed ? "Reviewed" : "Mark";
   updateSelectedHistoryReviewState();
-  renderReviewPanel(latestResult);
-  renderSummary(latestResult);
-  gatePanel.innerHTML = renderDecisionGate(latestResult);
+  syncAppFrame();
+  refreshReviewStatusViews(latestResult);
 });
 
 async function checkHealth() {
@@ -549,6 +642,163 @@ async function checkHealth() {
     apiStatus.classList.add("error");
     apiStatus.classList.remove("ok");
   }
+}
+
+async function initializeAuth() {
+  document.body.classList.add("auth-locked");
+  try {
+    const response = await apiFetch(`${API_BASE}/auth/me`);
+    if (!response.ok) {
+      throw new Error("Authentication required.");
+    }
+    const payload = await response.json();
+    currentUser = payload.user;
+    applyRoleUi();
+  } catch {
+    currentUser = null;
+    applyRoleUi();
+    showAuthOverlay();
+  }
+}
+
+async function signIn() {
+  hideAuthError();
+  authSubmitButton.disabled = true;
+  const original = authSubmitButton.textContent;
+  authSubmitButton.textContent = "Signing in";
+  try {
+    const response = await apiFetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        display_name: authDisplayName.value.trim(),
+        email: authEmail.value.trim() || null,
+        requested_role: authRequestedRole.value || "reviewer",
+        admin_password: authAdminPassword.value || null,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "Sign-in failed.");
+    }
+    currentUser = payload.user;
+    applyRoleUi();
+    showToast(`Signed in as ${roleLabel(currentUser.primary_role)}.`, "success");
+  } catch (error) {
+    showAuthOverlay(error.message || "Sign-in failed.");
+  } finally {
+    authSubmitButton.disabled = false;
+    authSubmitButton.textContent = original;
+  }
+}
+
+function apiFetch(url, options = {}) {
+  return fetch(url, {
+    credentials: "include",
+    ...options,
+  });
+}
+
+function showAuthOverlay(message = "") {
+  document.body.classList.add("auth-locked");
+  if (authOverlay) {
+    authOverlay.hidden = false;
+  }
+  if (message) {
+    showAuthError(message);
+  }
+}
+
+function hideAuthOverlay() {
+  document.body.classList.remove("auth-locked");
+  if (authOverlay) {
+    authOverlay.hidden = true;
+  }
+  hideAuthError();
+}
+
+function showAuthError(message) {
+  if (!authError) {
+    return;
+  }
+  authError.textContent = message;
+  authError.hidden = false;
+}
+
+function hideAuthError() {
+  if (!authError) {
+    return;
+  }
+  authError.textContent = "";
+  authError.hidden = true;
+}
+
+function hasPermission(permission) {
+  return Boolean(currentUser?.permissions?.[permission]);
+}
+
+function applyRoleUi() {
+  const signedIn = Boolean(currentUser);
+  if (!signedIn) {
+    showAuthOverlay();
+  } else {
+    hideAuthOverlay();
+  }
+
+  if (userChip) {
+    userChip.hidden = !signedIn;
+  }
+  if (signedIn) {
+    const initials = currentUser.display_name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("");
+    userAvatar.textContent = initials || "U";
+    userRoleLabel.textContent = roleLabel(currentUser.primary_role);
+    userDisplayName.textContent = currentUser.display_name;
+  }
+
+  const canAssess = hasPermission("can_assess");
+  const canReview = hasPermission("can_review");
+  const canArchitectReview = hasPermission("can_architect_review");
+  const canView = hasPermission("can_view");
+
+  form?.querySelectorAll("input, select, textarea, button").forEach((control) => {
+    control.disabled = !canAssess;
+  });
+  submitButton.disabled = !canAssess || document.body.classList.contains("is-loading-assessment");
+  submitButton.title = canAssess ? "" : "Viewer access cannot run assessments.";
+
+  saveAssessmentButton.disabled = !latestResult || !canReview;
+  markReviewedButton.disabled = !latestResult || !canArchitectReview;
+  markReviewedButton.title = canArchitectReview ? "" : "Only Aryan or an architect can mark architect review.";
+  workflowStatus.disabled = !canArchitectReview;
+  architectNotes.disabled = !canArchitectReview;
+  reviewerNameInput.disabled = !canReview;
+  projectNameInput.disabled = !canReview;
+  reviewComments.disabled = !canReview;
+
+  copyReportButton.disabled = !latestResult || !canView;
+  downloadPdfButton.disabled = !latestResult || !canView;
+  downloadReportButton.disabled = !latestResult || !canView;
+  downloadDiagramButton.disabled = !latestResult || !canView;
+  agentChatInput.disabled = !canView;
+  agentChatSendButton.disabled = !canView || !latestResult;
+
+  document.body.dataset.userRole = signedIn ? currentUser.primary_role : "anonymous";
+  document.body.classList.toggle("role-restricted", signedIn && !canArchitectReview);
+}
+
+function roleLabel(role) {
+  const labels = {
+    admin: "Admin + Architect",
+    architect: "Architect",
+    reviewer: "Reviewer",
+    viewer: "Viewer",
+  };
+  return labels[role] || "Signed in";
 }
 
 function setFilePreview(file) {
@@ -584,6 +834,7 @@ function renderResult(payload) {
   selectedCanvasComponentId = payload.target_architecture?.components?.[0]?.id || null;
   renderSummary(payload);
   renderAnalysisMeta(payload.analysis_metadata || {});
+  renderQualityGates(payload);
   overviewPanel.innerHTML = renderOverview(payload);
   sourcePanel.innerHTML = renderSourceArchitecture(payload);
   mappingPanel.innerHTML = renderMappings(payload.service_mappings || []);
@@ -604,6 +855,8 @@ function renderResult(payload) {
   syncZoomControls();
   resetAgentChat(payload);
   setViewMode(viewMode);
+  toggleIntakePanel(true);
+  applyRoleUi();
 }
 
 function resetAgentChat(payload = latestResult) {
@@ -618,15 +871,28 @@ function resetAgentChat(payload = latestResult) {
   const target = payload?.target_architecture?.provider
     ? formatProvider(payload.target_architecture.provider)
     : "target";
+  const gateSummary = payload
+    ? buildQualityGateItems(payload)
+        .filter((gate) => ["block", "warn"].includes(gate.status))
+        .slice(0, 3)
+        .map((gate) => `<li>${escapeHtml(gate.label)}: ${escapeHtml(gate.value)}</li>`)
+        .join("")
+    : "";
   agentStatus.textContent = payload ? "Assessment loaded" : "No assessment";
   agentChatLog.innerHTML = `
     <div class="agent-message assistant">
-      <strong>Migration Agent</strong>
-      <p>${
-        payload
-          ? `I have the ${escapeHtml(source)} to ${escapeHtml(target)} assessment in context. Ask me about architecture flow, mappings, risks, cutover, costs, or the final verdict.`
-          : "Run an assessment, then ask me about mappings, architecture flow, risks, cost signals, or the final verdict."
-      }</p>
+      <div class="agent-message-meta">
+        <span class="agent-message-avatar">CB</span>
+        <strong>Migration Agent</strong>
+      </div>
+      <div class="agent-message-body">
+        <p>${
+          payload
+            ? `I have the ${escapeHtml(source)} to ${escapeHtml(target)} assessment in context. Ask me about architecture flow, mappings, risks, cutover, costs, or the final verdict.`
+            : "Run an assessment, then ask me about mappings, architecture flow, risks, cost signals, or the final verdict."
+        }</p>
+        ${gateSummary ? `<ul>${gateSummary}</ul>` : ""}
+      </div>
     </div>
   `;
 }
@@ -646,7 +912,7 @@ async function askMigrationAgent() {
   });
 
   try {
-    const response = await fetch(`${API_BASE}/ask-migration-agent`, {
+    const response = await apiFetch(`${API_BASE}/ask-migration-agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -695,7 +961,10 @@ function appendAgentMessage(role, content, options = {}) {
   message.className = `agent-message ${role}${options.transient ? " transient" : ""}`;
   const label = role === "user" ? "You" : "Migration Agent";
   message.innerHTML = `
-    <strong>${label}</strong>
+    <div class="agent-message-meta">
+      <span class="agent-message-avatar">${role === "user" ? "You" : "CB"}</span>
+      <strong>${label}</strong>
+    </div>
     <div class="agent-message-body">${
       role === "assistant" ? renderMarkdown(content || "") : `<p>${escapeHtml(content || "")}</p>`
     }</div>
@@ -719,7 +988,7 @@ function renderAgentSuggestionButtons(suggestions) {
     .slice(0, 4)
     .map(
       (suggestion) =>
-        `<button type="button" data-agent-prompt="${escapeAttribute(suggestion)}">${escapeHtml(shortSuggestion(suggestion))}</button>`,
+        `<button type="button" data-agent-prompt="${escapeAttribute(suggestion)}"><span>Ask</span>${escapeHtml(shortSuggestion(suggestion))}</button>`,
     )
     .join("");
 }
@@ -957,6 +1226,167 @@ function renderSummary(payload) {
     </div>
   `;
   syncAppFrame(payload);
+  syncSnapshotCondensed();
+}
+
+function toggleIntakePanel(forceCollapsed = undefined) {
+  const collapsed =
+    typeof forceCollapsed === "boolean"
+      ? forceCollapsed
+      : !appShell?.classList.contains("intake-collapsed");
+  appShell?.classList.toggle("intake-collapsed", collapsed);
+  if (toggleIntakeButton) {
+    toggleIntakeButton.textContent = collapsed ? "Show Intake" : "Intake";
+    toggleIntakeButton.setAttribute("aria-expanded", String(!collapsed));
+  }
+  if (collapseIntakeButton) {
+    collapseIntakeButton.textContent = collapsed ? "Hidden" : "Hide";
+  }
+}
+
+function setReviewRailCollapsed(collapsed) {
+  appShell?.classList.toggle("review-rail-collapsed", collapsed);
+  if (toggleReviewRailButton) {
+    toggleReviewRailButton.setAttribute("aria-expanded", String(!collapsed));
+    toggleReviewRailButton.textContent = collapsed ? "Review" : "Hide Review";
+  }
+  closeReviewRailButton?.setAttribute("aria-expanded", String(!collapsed));
+}
+
+function promoteReviewAfterArchitectComment(changedField) {
+  if (!hasPermission("can_architect_review")) {
+    return;
+  }
+  if (changedField !== architectNotes && changedField !== reviewComments) {
+    return;
+  }
+  if (reviewState.status !== "needs_review") {
+    return;
+  }
+  const hasReviewComment = Boolean(
+    (architectNotes?.value || "").trim() || (reviewComments?.value || "").trim(),
+  );
+  if (!hasReviewComment) {
+    return;
+  }
+  reviewState.status = "reviewed";
+  reviewState.reviewed = true;
+  if (workflowStatus) {
+    workflowStatus.value = "reviewed";
+  }
+  if (markReviewedButton) {
+    markReviewedButton.textContent = "Reviewed";
+  }
+  showToast("Architect comments captured. Status moved to Reviewed.", "success");
+}
+
+function buildQualityGateItems(payload) {
+  const mappings = payload?.service_mappings || [];
+  const risks = payload?.risks || [];
+  const missing = payload?.source_architecture?.missing_information || [];
+  const assumptions = payload?.assumptions || payload?.source_architecture?.assumptions || [];
+  const readiness = Number(payload?.assessment_insights?.scores?.overall_readiness?.value ?? 0);
+  const costPredictability = Number(payload?.assessment_insights?.scores?.cost_predictability?.value ?? 0);
+  const lowConfidenceMappings = mappings.filter((mapping) => Number(mapping.confidence || 0) < 0.75);
+  const criticalRisks = risks.filter((risk) => ["critical", "high"].includes(String(risk.severity || "").toLowerCase()));
+  const pattern = selectedArchitecturePattern(payload);
+
+  return [
+    {
+      label: "Readiness",
+      value: `${Math.round(readiness)}%`,
+      status: readiness >= 70 ? "good" : readiness >= 45 ? "warn" : "block",
+      detail:
+        readiness >= 70
+          ? "Assessment is strong enough for planning review."
+          : "Improve missing inputs, risks, and owner validation before approval.",
+    },
+    {
+      label: "Mapping Confidence",
+      value: `${lowConfidenceMappings.length} open`,
+      status: lowConfidenceMappings.length ? "warn" : "good",
+      detail: lowConfidenceMappings.length
+        ? "Low-confidence mappings need architect decisions."
+        : "No low-confidence mappings are currently blocking review.",
+    },
+    {
+      label: "Risk Gate",
+      value: `${criticalRisks.length} high`,
+      status: criticalRisks.length ? "block" : "good",
+      detail: criticalRisks.length
+        ? "High or critical risks need owners and mitigations."
+        : "No high-impact risks are currently blocking the draft.",
+    },
+    {
+      label: "Cost Confidence",
+      value: `${Math.round(costPredictability)}%`,
+      status: costPredictability >= 65 ? "good" : costPredictability >= 35 ? "warn" : "block",
+      detail: "Cost remains directional until inventory, usage, and data volume are attached.",
+    },
+    {
+      label: "Missing Inputs",
+      value: `${missing.length}`,
+      status: missing.length > 2 ? "block" : missing.length ? "warn" : "good",
+      detail: missing.length
+        ? "Assign owners for missing information before final signoff."
+        : assumptions.length
+          ? "Assumptions exist, but no explicit missing information was returned."
+          : "No missing information listed by the assessment.",
+    },
+    {
+      label: "Pattern",
+      value: pattern.label,
+      status: "neutral",
+      detail: pattern.guardrails,
+    },
+  ];
+}
+
+function renderQualityGates(payload) {
+  if (!qualityGates) {
+    return;
+  }
+  const gates = buildQualityGateItems(payload);
+  const blockerCount = gates.filter((gate) => gate.status === "block").length;
+  const warningCount = gates.filter((gate) => gate.status === "warn").length;
+  qualityGates.innerHTML = `
+    <section class="quality-card ${blockerCount ? "block" : warningCount ? "warn" : "good"} quality-card-lead">
+      <span>Assessment Gate</span>
+      <strong>${blockerCount ? "Blocked for approval" : warningCount ? "Review required" : "Planning ready"}</strong>
+      <p>${blockerCount ? `${blockerCount} blockers must be resolved before approval.` : warningCount ? `${warningCount} items need architect review.` : "No major blockers detected in the current draft."}</p>
+    </section>
+    ${gates
+      .map(
+        (gate) => `
+          <section class="quality-card ${escapeHtml(gate.status)}">
+            <span>${escapeHtml(gate.label)}</span>
+            <strong>${escapeHtml(gate.value)}</strong>
+            <p>${escapeHtml(gate.detail)}</p>
+          </section>
+        `,
+      )
+      .join("")}
+  `;
+}
+
+function hasApprovalBlockers(payload) {
+  return buildQualityGateItems(payload).some((gate) => gate.status === "block");
+}
+
+function refreshReviewStatusViews(payload = latestResult) {
+  if (!payload) {
+    return;
+  }
+  renderSummary(payload);
+  renderQualityGates(payload);
+  overviewPanel.innerHTML = renderOverview(payload);
+  gatePanel.innerHTML = renderDecisionGate(payload);
+  renderReviewPanel(payload);
+}
+
+function syncSnapshotCondensed() {
+  const shouldCondense = Boolean(latestResult) && window.scrollY > 180 && window.innerWidth > 760;
+  document.body.classList.toggle("snapshot-condensed", shouldCondense);
 }
 
 function renderOverview(payload) {
@@ -1459,9 +1889,12 @@ function renderReviewPanel(payload) {
     ${renderRailList("Next Actions", nextActions)}
     ${renderRailList("Architect Notes", architect)}
   `;
-  markReviewedButton.disabled = !latestResult;
+  markReviewedButton.disabled = !latestResult || !hasPermission("can_architect_review");
   markReviewedButton.textContent = reviewState.reviewed ? "Reviewed" : "Mark";
   workflowStatus.value = reviewState.status || (reviewState.reviewed ? "reviewed" : "needs_review");
+  workflowStatus.disabled = !hasPermission("can_architect_review");
+  architectNotes.disabled = !hasPermission("can_architect_review");
+  reviewComments.disabled = !hasPermission("can_review");
 }
 
 function renderDecisionGate(payload) {
@@ -1470,7 +1903,8 @@ function renderDecisionGate(payload) {
   const warnings = review.warnings || [];
   const readiness = payload.assessment_insights?.scores?.overall_readiness;
   const pattern = selectedArchitecturePattern(payload);
-  const gateReady = readiness?.value >= 70 && checklist.every((item) => item.status !== "required") && !warnings.length;
+  const approvalBlocked = hasApprovalBlockers(payload);
+  const gateReady = !approvalBlocked && readiness?.value >= 70 && checklist.every((item) => item.status !== "required") && !warnings.length;
   const rows = checklist
     .map(
       (item) => `
@@ -1505,6 +1939,10 @@ function renderDecisionGate(payload) {
           <h3>${readiness?.value ?? 0}% readiness</h3>
           <p>Approve only after required checklist items, cost model, security review, and rollback plan are accepted.</p>
         </section>
+      </div>
+      <div class="approval-banner ${approvalBlocked ? "block" : "good"}">
+        <strong>${approvalBlocked ? "Approval blocked" : "Approval path open"}</strong>
+        <span>${approvalBlocked ? "Resolve quality gate blockers before moving this assessment to Approved For Planning." : "No blocking quality gates are currently open. Architect signoff is still required."}</span>
       </div>
       <div class="gate-list">${rows || '<div class="empty-state">No checklist returned.</div>'}</div>
       <div class="dashboard-grid">
@@ -2024,6 +2462,9 @@ function inferArchitecturePattern(payload) {
   if (/expressroute|direct connect|interconnect|vpn|cloud router|transit gateway|on-prem|on premises/.test(text)) {
     return patternDefinition("hybrid-connectivity");
   }
+  if (/iot|device|telemetry|sensor|pub\/sub|event hubs|iot hub|iot core|kinesis|stream analytics/.test(text)) {
+    return patternDefinition("iot-data-platform");
+  }
   if (/bigquery|redshift|synapse|dataflow|databricks|glue|data lake|warehouse|pub\/sub|kafka|dataproc/.test(text)) {
     return patternDefinition("data-platform");
   }
@@ -2051,6 +2492,13 @@ function patternDefinition(key) {
       targetDescription: "Maps ingestion, processing, storage, analytics, BI/API serving, and governance into target-native services.",
       guardrailTitle: "Data governance",
       guardrails: "Validate lineage, retention, partitioning, data quality, access controls, encryption, and dual-run reconciliation.",
+    },
+    "iot-data-platform": {
+      label: "IoT data platform",
+      description: "Device or edge ingestion, streaming, processing, storage, analytics, serving, and operational controls.",
+      targetDescription: "Separates device ingress, event streaming, stream processing, lake/warehouse storage, serving, and observability.",
+      guardrailTitle: "Device and stream reliability",
+      guardrails: "Validate device identity, protocol compatibility, event ordering, retry/dead-letter behavior, hot partitions, retention, and downstream replay.",
     },
     graphrag: {
       label: "GraphRAG / knowledge graph",
@@ -2601,7 +3049,7 @@ async function renderDiagramImage(payload) {
   });
 
   try {
-    const response = await fetch(`${API_BASE}/download-aws-diagram`, {
+    const response = await apiFetch(`${API_BASE}/download-aws-diagram`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2970,8 +3418,29 @@ function renderReportMemo(payload) {
       </div>
     </section>
 
+    <section class="report-decision-grid">
+      ${renderReportDecisionCard("Decision Gate", buildQualityGateItems(payload).slice(0, 4).map((gate) => `${gate.label}: ${gate.value}`))}
+      ${renderReportDecisionCard("Mapping Review", (payload.service_mappings || []).slice(0, 5).map((mapping) => `${mapping.source_service} -> ${mapping.target_service}`))}
+      ${renderReportDecisionCard("Top Risks", (payload.risks || []).slice(0, 5).map((risk) => `${risk.severity}: ${risk.title}`))}
+      ${renderReportDecisionCard("Next Actions", payload.assessment_insights?.review?.suggested_next_actions || [])}
+    </section>
+
     <section class="report-document">
       ${renderMarkdown(payload.markdown_report || "")}
+    </section>
+  `;
+}
+
+function renderReportDecisionCard(title, items) {
+  const safeItems = (items || []).filter(Boolean).slice(0, 5);
+  return `
+    <section class="report-decision-card">
+      <p class="eyebrow">${escapeHtml(title)}</p>
+      ${
+        safeItems.length
+          ? `<ul>${safeItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : '<p class="muted">No items returned.</p>'
+      }
     </section>
   `;
 }
@@ -3102,12 +3571,16 @@ async function rebuildFromEditedSource() {
   if (!latestResult?.source_architecture) {
     return;
   }
+  if (!hasPermission("can_assess")) {
+    showError("Your current role cannot rebuild assessments.");
+    return;
+  }
   hideError();
   setLoading(true);
   startAssessmentTimeline();
   resultTitle.textContent = "Rebuilding";
   try {
-    const response = await fetch(`${API_BASE}/rebuild-assessment`, {
+    const response = await apiFetch(`${API_BASE}/rebuild-assessment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -3452,8 +3925,9 @@ function activateTab(tabName) {
 function setLoading(isLoading) {
   loadingState.hidden = !isLoading;
   document.body.classList.toggle("is-loading-assessment", isLoading);
-  submitButton.disabled = isLoading;
+  submitButton.disabled = isLoading || !hasPermission("can_assess");
   submitButton.textContent = isLoading ? "Running Assessment" : "Run Assessment";
+  applyRoleUi();
 }
 
 function showError(message) {
@@ -3468,12 +3942,12 @@ function hideError() {
 }
 
 function enableActions(enabled) {
-  copyReportButton.disabled = !enabled;
-  downloadPdfButton.disabled = !enabled;
-  downloadReportButton.disabled = !enabled;
-  downloadDiagramButton.disabled = !enabled;
-  saveAssessmentButton.disabled = !enabled;
-  markReviewedButton.disabled = !enabled;
+  copyReportButton.disabled = !enabled || !hasPermission("can_view");
+  downloadPdfButton.disabled = !enabled || !hasPermission("can_view");
+  downloadReportButton.disabled = !enabled || !hasPermission("can_view");
+  downloadDiagramButton.disabled = !enabled || !hasPermission("can_view");
+  saveAssessmentButton.disabled = !enabled || !hasPermission("can_review");
+  markReviewedButton.disabled = !enabled || !hasPermission("can_architect_review");
 }
 
 function pulseButton(button, label) {

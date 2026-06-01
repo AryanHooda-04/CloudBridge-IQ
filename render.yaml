@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cloudbridge-iq
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MODEL_NAME
+        value: gpt-4.1
+      - key: VISION_MODEL_NAME
+        value: gpt-4.1
+      - key: SSL_OPENAI
+        value: insecure
+      - key: AUTH_DEFAULT_ROLE
+        value: reviewer
+      - key: AUTH_SESSION_HOURS
+        value: "8"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AUTH_SECRET_KEY
+        generateValue: true
+      - key: AUTH_ADMIN_PASSWORD
+        sync: false

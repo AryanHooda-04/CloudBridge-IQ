@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CloudBridge IQ</title>
     <link rel="icon" type="image/svg+xml" href="assets/cloudbridge-iq-favicon.svg" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=agent-workspace-20260601" />
   </head>
   <body>
     <div class="app-shell">
@@ -64,15 +64,38 @@
             Review
           </button>
           <div class="status-pill" id="apiStatus">Checking API</div>
+          <div class="user-chip" id="userChip" hidden>
+            <span class="user-avatar" id="userAvatar">U</span>
+            <div>
+              <span id="userRoleLabel">Signed in</span>
+              <strong id="userDisplayName">User</strong>
+            </div>
+            <button type="button" class="icon-button" id="logoutButton">Sign out</button>
+          </div>
         </div>
       </header>
 
       <main class="workspace">
         <section class="control-panel" aria-label="Assessment inputs">
           <div class="intake-header">
-            <p class="eyebrow">Guided Intake</p>
-            <h2>New Assessment</h2>
+            <div class="intake-header-top">
+              <div>
+                <p class="eyebrow">Guided Intake</p>
+                <h2>New Assessment</h2>
+              </div>
+              <button type="button" class="panel-toggle-button" id="collapseIntakeButton">Hide</button>
+            </div>
             <p>Upload a diagram, confirm the route, select goals, then run the migration assessment.</p>
+            <div class="migration-visual-card" aria-hidden="true">
+              <img src="assets/migration-flow-visual.svg" alt="" />
+            </div>
+            <div class="wizard-path" aria-label="Assessment workflow">
+              <span class="active">Upload</span>
+              <span>Detect</span>
+              <span>Map</span>
+              <span>Design</span>
+              <span>Review</span>
+            </div>
           </div>
           <form id="analysisForm" class="form-stack">
             <section class="intake-step">
@@ -163,6 +186,7 @@
                   <option value="auto">Auto detect</option>
                   <option value="hybrid-connectivity">Hybrid connectivity</option>
                   <option value="data-platform">Data platform</option>
+                  <option value="iot-data-platform">IoT data platform</option>
                   <option value="graphrag">GraphRAG / knowledge graph</option>
                   <option value="web-application">Web application</option>
                   <option value="microservices">Microservices</option>
@@ -187,6 +211,9 @@
               <h2 id="resultTitle">Ready</h2>
             </div>
             <div class="result-actions">
+              <button type="button" class="icon-button intake-toggle" id="toggleIntakeButton" title="Show or hide guided intake">
+                Intake
+              </button>
               <div class="view-toggle" aria-label="View mode">
                 <button type="button" class="active" data-view-mode="executive">Executive</button>
                 <button type="button" data-view-mode="architect">Architect</button>
@@ -236,6 +263,14 @@
             Analysis mode will appear after the first run.
           </div>
 
+          <div class="quality-gates" id="qualityGates" aria-label="Assessment quality gates">
+            <section class="quality-card neutral">
+              <span>Gate</span>
+              <strong>Waiting for assessment</strong>
+              <p>Upload a diagram to validate readiness, mappings, cost, risks, and missing inputs.</p>
+            </section>
+          </div>
+
           <div class="tabs" role="tablist" aria-label="Result views">
             <button type="button" class="tab active" data-tab="overview">Overview</button>
             <button type="button" class="tab" data-tab="source">Source</button>
@@ -259,8 +294,10 @@
             <div class="error-state" id="errorState" hidden></div>
 
             <article class="tab-panel overview-view active" id="overviewPanel">
-              <div class="empty-state">
-                Upload a diagram and run an assessment to view the decision dashboard.
+              <div class="empty-state visual-empty-state">
+                <img src="assets/migration-flow-visual.svg" alt="" />
+                <strong>Ready for assessment</strong>
+                <span>Upload a diagram and run an assessment to view the decision dashboard.</span>
               </div>
             </article>
 
@@ -294,41 +331,85 @@
 
             <article class="tab-panel agent-view" id="agentPanel">
               <section class="agent-workspace">
-                <div class="section-header">
-                  <div>
-                    <p class="eyebrow">CloudBridge IQ</p>
+                <div class="agent-hero">
+                  <div class="agent-hero-copy">
+                    <p class="eyebrow">CloudBridge IQ Assistant</p>
                     <h3>Migration Agent</h3>
-                    <p>Ask assessment-aware questions about architecture flow, mappings, risks, cutover, costs, and the final verdict.</p>
+                    <p>Ask assessment-aware questions about architecture flow, service mappings, risk gates, cutover, cost signals, and the final verdict.</p>
                   </div>
-                  <span class="agent-status" id="agentStatus">No assessment</span>
+                  <div class="agent-hero-status">
+                    <span class="agent-status" id="agentStatus">No assessment</span>
+                    <span>Assessment context, reviewer notes, active tab, and target design are used when available.</span>
+                  </div>
                 </div>
 
                 <div class="agent-tab-layout">
                   <section class="agent-card agent-card-main" aria-label="Migration agent chat">
-                    <div class="agent-suggestions" aria-label="Suggested questions">
-                      <button type="button" data-agent-prompt="Explain the target architecture flow.">Architecture flow</button>
-                      <button type="button" data-agent-prompt="Which mappings need architect review?">Mapping review</button>
-                      <button type="button" data-agent-prompt="What are the top migration risks?">Top risks</button>
-                      <button type="button" data-agent-prompt="Summarize cost and savings signals.">Cost signals</button>
+                    <div class="agent-card-top">
+                      <div>
+                        <p class="eyebrow">Conversation</p>
+                        <h4>Ask a focused migration question</h4>
+                      </div>
+                      <button type="button" class="agent-clear-button" id="agentClearButton">Reset chat</button>
                     </div>
-                    <div class="agent-chat-log" id="agentChatLog" aria-live="polite">
-                      <div class="agent-message assistant">
-                        <strong>Migration Agent</strong>
-                        <p>Run an assessment, then ask me about mappings, architecture flow, risks, cost signals, or the final verdict.</p>
+
+                    <div class="agent-suggestions" aria-label="Suggested questions">
+                      <button type="button" data-agent-prompt="Explain the target architecture flow.">
+                        <span>Flow</span>
+                        Explain target flow
+                      </button>
+                      <button type="button" data-agent-prompt="Which mappings need architect review?">
+                        <span>Map</span>
+                        Review mappings
+                      </button>
+                      <button type="button" data-agent-prompt="What are the top migration risks?">
+                        <span>Risk</span>
+                        Top risks
+                      </button>
+                      <button type="button" data-agent-prompt="Summarize cost and savings signals.">
+                        <span>Cost</span>
+                        Cost signals
+                      </button>
+                      <button type="button" data-agent-prompt="What should be validated before approval?">
+                        <span>Gate</span>
+                        Approval checks
+                      </button>
+                      <button type="button" data-agent-prompt="Give me the cutover and rollback path.">
+                        <span>Run</span>
+                        Cutover plan
+                      </button>
+                    </div>
+
+                    <div class="agent-chat-shell">
+                      <div class="agent-chat-log" id="agentChatLog" aria-live="polite">
+                        <div class="agent-message assistant">
+                          <div class="agent-message-meta">
+                            <span class="agent-message-avatar">CB</span>
+                            <strong>Migration Agent</strong>
+                          </div>
+                          <div class="agent-message-body">
+                            <p>Run an assessment, then ask me about mappings, architecture flow, risks, cost signals, or the final verdict.</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
+
                     <form class="agent-chat-form" id="agentChatForm">
-                      <label>
+                      <label class="agent-composer">
                         <span>Ask about this assessment</span>
                         <textarea id="agentChatInput" rows="4" placeholder="Example: Why did it map Pub/Sub to SNS + SQS instead of SNS only?"></textarea>
                       </label>
-                      <button type="submit" class="agent-send-button" id="agentChatSendButton">Ask Agent</button>
+                      <div class="agent-composer-actions">
+                        <span>Use Ctrl + Enter to send</span>
+                        <button type="submit" class="agent-send-button" id="agentChatSendButton">Ask Agent</button>
+                      </div>
                     </form>
                   </section>
 
                   <aside class="agent-context-panel" aria-label="Agent context">
-                    <section class="info-card">
-                      <p class="eyebrow">Good Questions</p>
+                    <section class="agent-side-card agent-side-card-primary">
+                      <p class="eyebrow">Best Questions</p>
+                      <h4>Ask like an architect</h4>
                       <ul>
                         <li>What changed from source to target?</li>
                         <li>Which mappings are risky or low confidence?</li>
@@ -336,9 +417,18 @@
                         <li>What is the suggested cutover and rollback path?</li>
                       </ul>
                     </section>
-                    <section class="info-card">
-                      <p class="eyebrow">Context Used</p>
-                      <p>The agent uses the current assessment JSON, reviewer notes, active tab, mappings, risks, target architecture, and cost signals.</p>
+                    <section class="agent-side-card">
+                      <p class="eyebrow">Context Packet</p>
+                      <div class="agent-context-list">
+                        <span>Current assessment JSON</span>
+                        <span>Target architecture</span>
+                        <span>Mappings and alternatives</span>
+                        <span>Risks, gate status, and reviewer notes</span>
+                      </div>
+                    </section>
+                    <section class="agent-side-card">
+                      <p class="eyebrow">Answer Style</p>
+                      <p>Answers are concise, assessment-specific, and call out low-confidence assumptions instead of pretending certainty.</p>
                     </section>
                   </aside>
                 </div>
@@ -360,9 +450,14 @@
                 <p class="eyebrow">Review</p>
                 <h2>Decision Gate</h2>
               </div>
-              <button type="button" class="icon-button" id="markReviewedButton" disabled>
-                Mark
-              </button>
+              <div class="rail-actions">
+                <button type="button" class="icon-button rail-close-button" id="closeReviewRailButton" aria-label="Collapse decision gate sidebar">
+                  Collapse
+                </button>
+                <button type="button" class="icon-button" id="markReviewedButton" disabled>
+                  Mark
+                </button>
+              </div>
             </div>
             <div class="checklist" id="reviewChecklist">
               <div class="empty-state">Decision checklist will appear after analysis.</div>
@@ -431,6 +526,58 @@
     </div>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
 
-    <script src="app.js" defer></script>
+    <section class="auth-overlay" id="authOverlay" aria-label="CloudBridge IQ sign in">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <img class="brand-mark" src="assets/cloudbridge-iq-mark.svg" alt="" />
+          <div>
+            <p class="eyebrow">Secure Workspace</p>
+            <h2>Sign in to CloudBridge IQ</h2>
+          </div>
+        </div>
+        <p>
+          Aryan is assigned admin and architect access. Other users can enter as reviewers or viewers.
+        </p>
+        <form id="authForm" class="auth-form">
+          <label>
+            <span>Name</span>
+            <input id="authDisplayName" type="text" autocomplete="name" placeholder="Aryan or reviewer name" required />
+          </label>
+          <label>
+            <span>Email or user ID</span>
+            <input id="authEmail" type="text" autocomplete="username" placeholder="optional" />
+          </label>
+          <label>
+            <span>Requested access</span>
+            <select id="authRequestedRole">
+              <option value="reviewer">Reviewer</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <label>
+            <span>Admin password</span>
+            <input id="authAdminPassword" type="password" autocomplete="current-password" placeholder="Only if configured" />
+          </label>
+          <button type="submit" class="primary-action" id="authSubmitButton">Sign in</button>
+          <div class="auth-error" id="authError" hidden></div>
+        </form>
+        <div class="role-matrix">
+          <div>
+            <strong>Admin / Architect</strong>
+            <span>Run, edit, review, approve, export.</span>
+          </div>
+          <div>
+            <strong>Reviewer</strong>
+            <span>Run assessments, comment, save, export.</span>
+          </div>
+          <div>
+            <strong>Viewer</strong>
+            <span>Read-only assessment access.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script src="app.js?v=agent-workspace-20260601" defer></script>
   </body>
 </html>

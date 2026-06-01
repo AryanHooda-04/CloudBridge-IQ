@@ -161,3 +161,25 @@ class MigrationAgentChatResponse(BaseModel):
     suggested_questions: list[str] = []
     used_assessment_context: bool = False
     model_used: str | None = None
+
+
+UserRole = Literal["admin", "architect", "reviewer", "viewer"]
+
+
+class AuthLoginRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    email: str | None = Field(default=None, max_length=180)
+    requested_role: Literal["reviewer", "viewer"] = "reviewer"
+    admin_password: str | None = Field(default=None, max_length=200)
+
+
+class AuthUser(BaseModel):
+    display_name: str
+    email: str | None = None
+    primary_role: UserRole
+    roles: list[UserRole]
+    permissions: dict[str, bool]
+
+
+class AuthSessionResponse(BaseModel):
+    user: AuthUser

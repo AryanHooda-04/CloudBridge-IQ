@@ -13,10 +13,10 @@ networkx
 jinja2
 reportlab
 pytest
+diagrams
+graphviz
+pdf2image
 
 # Optional diagram/PDF image dependencies:
-# diagrams
-# graphviz
-# pdf2image
 # opencv-python
 # pytest-asyncio

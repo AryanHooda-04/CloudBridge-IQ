@@ -2,6 +2,10 @@ from app.schemas import ArchitectureComponent, SourceArchitecture
 from app.services.cloud_mapping import map_services
 
 
+class OfflineSettings:
+    has_openai_key = False
+
+
 def test_maps_known_azure_service_to_aws():
     source = SourceArchitecture(
         provider="Microsoft Azure",
@@ -38,7 +42,8 @@ def test_maps_known_azure_service_to_aws():
     assert mappings[0].alternatives
 
 
-def test_unknown_service_uses_low_confidence_fallback():
+def test_unknown_service_uses_low_confidence_fallback(monkeypatch):
+    monkeypatch.setattr("app.services.cloud_mapping.get_settings", lambda: OfflineSettings())
     source = SourceArchitecture(
         provider="azure",
         summary="Custom platform service.",

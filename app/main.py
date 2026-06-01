@@ -8,7 +8,7 @@ import binascii
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,9 @@ from app.agents.migration_graph import run_migration_assessment
 from app.config import get_settings
 from app.schemas import (
     AnalyzeMigrationResponse,
+    AuthLoginRequest,
+    AuthSessionResponse,
+    AuthUser,
     DiagramImageRequest,
     MigrationAssessmentReport,
     MigrationAgentChatRequest,
@@ -24,6 +27,14 @@ from app.schemas import (
     PdfReportRequest,
     RebuildAssessmentRequest,
     SourceArchitecture,
+)
+from app.services.auth import (
+    SESSION_COOKIE_NAME,
+    authenticate_user,
+    create_session_token,
+    get_current_user,
+    require_permission,
+    session_max_age_seconds,
 )
 from app.services.architecture_generator import generate_target_architecture
 from app.services.assessment_insights import build_assessment_insights
@@ -55,7 +66,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
         "http://localhost:8000",
+        "http://localhost:8001",
         "null",
     ],
     allow_methods=["GET", "POST"],
@@ -74,6 +87,33 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/auth/login", response_model=AuthSessionResponse)
+async def login(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
+    settings = get_settings()
+    user = authenticate_user(request, settings=settings)
+    token = create_session_token(user, settings=settings)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=session_max_age_seconds(settings),
+        httponly=True,
+        samesite="lax",
+        secure=False,
+    )
+    return AuthSessionResponse(user=user)
+
+
+@app.post("/auth/logout")
+async def logout(response: Response) -> dict[str, str]:
+    response.delete_cookie(key=SESSION_COOKIE_NAME, samesite="lax", secure=False)
+    return {"status": "signed_out"}
+
+
+@app.get("/auth/me", response_model=AuthSessionResponse)
+async def me(user: Annotated[AuthUser, Depends(get_current_user)]) -> AuthSessionResponse:
+    return AuthSessionResponse(user=user)
+
+
 @app.post("/analyze-migration", response_model=AnalyzeMigrationResponse)
 async def analyze_migration(
     file: Annotated[UploadFile, File(description="Architecture diagram image or PDF")],
@@ -81,6 +121,7 @@ async def analyze_migration(
     target_provider: Annotated[str, Form()] = "aws",
     migration_intent: Annotated[str | None, Form()] = None,
     goals: Annotated[str | None, Form()] = None,
+    _user: AuthUser = Depends(require_permission("can_assess")),
 ) -> AnalyzeMigrationResponse:
     settings = get_settings()
     file_bytes = await file.read()
@@ -111,7 +152,10 @@ async def analyze_migration(
 
 
 @app.post("/rebuild-assessment", response_model=AnalyzeMigrationResponse)
-async def rebuild_assessment(request: RebuildAssessmentRequest) -> AnalyzeMigrationResponse:
+async def rebuild_assessment(
+    request: RebuildAssessmentRequest,
+    _user: AuthUser = Depends(require_permission("can_assess")),
+) -> AnalyzeMigrationResponse:
     """Rebuild mappings, target architecture, report, and insights after user edits."""
 
     try:
@@ -137,7 +181,10 @@ async def rebuild_assessment(request: RebuildAssessmentRequest) -> AnalyzeMigrat
 
 
 @app.post("/download-report-pdf")
-async def download_report_pdf(request: PdfReportRequest) -> Response:
+async def download_report_pdf(
+    request: PdfReportRequest,
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> Response:
     rendered_diagram_png: bytes | None = None
     rendered_diagram_title = "Generated Architecture Diagram"
     mermaid_diagram_png = None
@@ -195,7 +242,10 @@ async def download_report_pdf(request: PdfReportRequest) -> Response:
 
 
 @app.post("/download-aws-diagram")
-async def download_aws_diagram(request: DiagramImageRequest) -> Response:
+async def download_aws_diagram(
+    request: DiagramImageRequest,
+    _user: AuthUser = Depends(require_permission("can_view")),
+) -> Response:
     try:
         png_bytes = generate_aws_diagram_png(request.target_architecture)
     except RuntimeError as exc:
@@ -212,6 +262,7 @@ async def download_aws_diagram(request: DiagramImageRequest) -> Response:
 @app.post("/ask-migration-agent", response_model=MigrationAgentChatResponse)
 async def ask_migration_agent(
     request: MigrationAgentChatRequest,
+    _user: AuthUser = Depends(require_permission("can_view")),
 ) -> MigrationAgentChatResponse:
     try:
         return await answer_migration_question(request)

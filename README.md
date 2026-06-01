@@ -48,11 +48,19 @@ VISION_MODEL_NAME=gpt-4.1
 SSL_OPENAI=insecure
 POPPLER_PATH=C:\Tools\poppler\poppler-26.02.0\Library\bin
 GRAPHVIZ_DOT=C:\Tools\Graphviz-15.0.0-win64\bin\dot.exe
+AUTH_SECRET_KEY=replace_with_a_random_session_secret
+AUTH_ADMIN_IDENTITIES=aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04
+AUTH_ARCHITECT_IDENTITIES=aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04
+AUTH_ADMIN_PASSWORD=
+AUTH_DEFAULT_ROLE=reviewer
+AUTH_SESSION_HOURS=8
 ```
 
 `SSL_OPENAI=insecure` disables TLS certificate verification for OpenAI calls. Use it only in environments that require it, such as corporate SSL interception setups.
 
 Without an API key, the application still runs and uses deterministic fallback detection for local development, but image-only diagrams will have low-confidence results.
+
+`AUTH_ADMIN_IDENTITIES` and `AUTH_ARCHITECT_IDENTITIES` control who receives elevated access. By default, Aryan identities are assigned admin and architect capabilities. Other signed-in users are constrained to reviewer or viewer access.
 
 ## Run
 
@@ -64,16 +72,116 @@ Open the browser UI at `http://127.0.0.1:8000`.
 
 Open the generated API docs at `http://127.0.0.1:8000/docs`.
 
+## Deploy Free On Render
+
+This project is ready to deploy on Render as a Docker Web Service. The included `Dockerfile` installs Python dependencies plus Graphviz and Poppler system packages for diagram rendering and PDF image conversion.
+
+### 1. Push The Repo To GitHub
+
+Commit and push the latest project files to GitHub. Do not commit `.env`.
+
+### 2. Create A Render Web Service
+
+In Render:
+
+```text
+New -> Web Service -> Connect GitHub repository
+```
+
+Recommended settings:
+
+```text
+Name: cloudbridge-iq
+Runtime: Docker
+Branch: main
+Root Directory: cloud_migration_agent
+Instance Type: Free
+Health Check Path: /health
+```
+
+If your GitHub repository root is already this `cloud_migration_agent` folder, leave **Root Directory** empty.
+
+### 3. Add Render Environment Variables
+
+Add these in the Render service dashboard:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+MODEL_NAME=gpt-4.1
+VISION_MODEL_NAME=gpt-4.1
+SSL_OPENAI=insecure
+AUTH_ADMIN_PASSWORD=your_admin_password
+AUTH_SECRET_KEY=generate_a_long_random_value
+AUTH_DEFAULT_ROLE=reviewer
+AUTH_SESSION_HOURS=8
+```
+
+`SSL_OPENAI=insecure` is included because this project is expected to run behind an environment that requires TLS verification bypass for OpenAI calls.
+
+### 4. Deploy
+
+Click:
+
+```text
+Manual Deploy -> Deploy latest commit
+```
+
+After deployment, open:
+
+```text
+https://<your-render-service>.onrender.com
+```
+
+Render free services can sleep after inactivity, so the first request after idle may take longer.
+
+### Optional Blueprint Deploy
+
+The included `render.yaml` can also be used as a Render Blueprint. It defines a free Docker web service, health check path, and required secret placeholders.
+
+### Local Docker Smoke Test
+
+You can test the container locally before pushing:
+
+```bash
+docker build -t cloudbridge-iq .
+docker run --rm -p 10000:10000 --env-file .env cloudbridge-iq
+```
+
+Then open `http://127.0.0.1:10000`.
+
 ## Web UI
 
 The app includes a local UI for testing and using the migration agent:
 
 - Upload an image or PDF architecture diagram.
+- Sign in with local RBAC. Aryan receives admin and architect access; other users enter as reviewer or viewer.
 - Set source and target providers.
 - Add migration intent and comma-separated goals.
 - Run the assessment against `POST /analyze-migration`.
-- Review the generated report, Mermaid diagram, service mappings, and raw JSON.
-- Copy the report or download PDF, Markdown, JSON, and rendered target diagram PNG output.
+- Review the generated report, architecture diagram, service mappings, risks, costs, and decision gate.
+- Copy the report or download PDF, Markdown, and rendered target diagram PNG output.
+
+## Auth And RBAC
+
+The local development build includes signed HTTP-only session cookies and role-based API protection.
+
+Roles:
+
+- `admin`: full access, including architect review, approval, assessment execution, exports, and admin capabilities.
+- `architect`: full assessment and architect review access, excluding admin-only ownership.
+- `reviewer`: can run assessments, save local review state, comment, ask the agent, and export.
+- `viewer`: read-only access to available assessment views and exports.
+
+Protected APIs:
+
+- `POST /analyze-migration` and `POST /rebuild-assessment` require `can_assess`.
+- `POST /download-report-pdf`, `POST /download-aws-diagram`, and `POST /ask-migration-agent` require `can_view`.
+
+Login endpoints:
+
+- `POST /auth/login`
+- `GET /auth/me`
+- `POST /auth/logout`
 
 ## API
 
@@ -91,11 +199,21 @@ Example:
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze-migration" \
+  -b cookies.txt \
   -F "file=@azure-architecture.png" \
   -F "source_provider=azure" \
   -F "target_provider=aws" \
   -F "migration_intent=We are migrating this from Azure to AWS." \
   -F "goals=reduce operations,modernize application hosting,improve disaster recovery"
+```
+
+Authenticate first when calling protected APIs directly:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/auth/login" \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d "{\"display_name\":\"Aryan\",\"email\":\"aryan.a\",\"requested_role\":\"reviewer\"}"
 ```
 
 Example response shape:
@@ -135,6 +253,7 @@ Converts the current Markdown assessment into a PDF download.
 ```bash
 curl -X POST "http://127.0.0.1:8000/download-report-pdf" \
   -H "Content-Type: application/json" \
+  -b cookies.txt \
   -d "{\"filename\":\"migration-assessment.pdf\",\"markdown_report\":\"# Migration Assessment Snapshot\"}" \
   --output migration-assessment.pdf
 ```
@@ -169,12 +288,13 @@ Core packages already used by the app:
 - `jinja2`
 - `reportlab`
 - `pytest`
+- `diagrams`
+- `graphviz`
+- `pdf2image`
 
 Recommended next improvement packages:
 
-- `pdf2image` for converting PDF architecture pages to images before vision analysis.
 - `opencv-python` for image cleanup, thresholding, resizing, and preprocessing before vision analysis.
-- `diagrams` and `graphviz` for image-based AWS architecture diagrams. Install the Graphviz system executable too if you want official AWS icon rendering rather than the built-in Pillow fallback.
 - `httpx` for richer API and integration tests.
 - `pytest-asyncio` for async workflow tests.
 
@@ -210,6 +330,7 @@ pytest
 - Cost estimates are qualitative. Production use should integrate measured utilization and pricing APIs.
 - Service mappings now cover common Azure, AWS, and Google Cloud directions, but each mapping still needs architect validation for production workloads.
 - The AWS architecture generator uses opinionated production defaults; Azure and Google Cloud targets use provider-native generic foundations that should be adapted to organizational landing zone standards.
+- Auth is local signed-cookie RBAC for development. Production deployments should replace the local login with enterprise SSO such as Microsoft Entra ID, Okta, or another OIDC provider.
 
 ## Future Improvements
 
@@ -218,4 +339,5 @@ pytest
 - Expand YAML mappings for more managed services, edge cases, and multi-cloud patterns.
 - Add optional image-based AWS diagram generation with `diagrams` and Graphviz.
 - Integrate cost modeling, migration wave planning, and dependency graph analysis.
+- Replace local RBAC with SSO-backed users, groups, audit events, and server-side assessment storage.
 - Add authentication, request persistence, background jobs, and report export formats.
