@@ -459,10 +459,11 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const fileBase64 = await readFileAsBase64(file);
-    const response = await apiFetch(`${API_BASE}/api/assessment-json`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        action: "assessment",
         filename: file.name || "architecture-diagram",
         content_type: file.type || null,
         file_base64: fileBase64,

@@ -8,7 +8,7 @@ import binascii
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -36,6 +36,7 @@ from app.services.auth import (
     get_current_user,
     require_permission,
     session_max_age_seconds,
+    user_from_session_token,
 )
 from app.services.architecture_generator import generate_target_architecture
 from app.services.assessment_insights import build_assessment_insights
@@ -93,9 +94,21 @@ async def login(request: AuthLoginRequest, response: Response) -> AuthSessionRes
     return _create_session_response(request, response)
 
 
-@app.post("/api/session", response_model=AuthSessionResponse)
-async def create_session(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
-    return _create_session_response(request, response)
+@app.post("/api/session")
+async def create_session_or_command(
+    request: dict,
+    response: Response,
+    session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+) -> AuthSessionResponse | AnalyzeMigrationResponse:
+    action = str(request.get("action") or "login").strip().lower()
+    if action in {"assessment", "analyze", "run_assessment"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_assess")
+        payload = AnalyzeMigrationJsonRequest.model_validate(request)
+        return await _run_assessment_from_json_payload(payload)
+
+    login_request = AuthLoginRequest.model_validate(request)
+    return _create_session_response(login_request, response)
 
 
 def _create_session_response(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
@@ -167,6 +180,12 @@ async def analyze_migration_json(
     request: AnalyzeMigrationJsonRequest,
     _user: AuthUser = Depends(require_permission("can_assess")),
 ) -> AnalyzeMigrationResponse:
+    return await _run_assessment_from_json_payload(request)
+
+
+async def _run_assessment_from_json_payload(
+    request: AnalyzeMigrationJsonRequest,
+) -> AnalyzeMigrationResponse:
     try:
         encoded = request.file_base64.split(",", 1)[1] if "," in request.file_base64 else request.file_base64
         file_bytes = base64.b64decode(encoded, validate=True)
@@ -182,6 +201,20 @@ async def analyze_migration_json(
         migration_intent=request.migration_intent,
         goals=request.goals,
     )
+
+
+def _user_from_optional_session(session_token: str | None) -> AuthUser:
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return user_from_session_token(session_token)
+
+
+def _ensure_permission(user: AuthUser, permission: str) -> None:
+    if not user.permissions.get(permission, False):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to perform this action.",
+        )
 
 
 async def _run_assessment_from_upload(
