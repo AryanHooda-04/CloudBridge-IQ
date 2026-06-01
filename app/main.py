@@ -89,6 +89,15 @@ async def health() -> dict[str, str]:
 
 @app.post("/auth/login", response_model=AuthSessionResponse)
 async def login(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
+    return _create_session_response(request, response)
+
+
+@app.post("/api/session", response_model=AuthSessionResponse)
+async def create_session(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
+    return _create_session_response(request, response)
+
+
+def _create_session_response(request: AuthLoginRequest, response: Response) -> AuthSessionResponse:
     settings = get_settings()
     user = authenticate_user(request, settings=settings)
     token = create_session_token(user, settings=settings)
@@ -105,12 +114,28 @@ async def login(request: AuthLoginRequest, response: Response) -> AuthSessionRes
 
 @app.post("/auth/logout")
 async def logout(response: Response) -> dict[str, str]:
+    return _delete_session_response(response)
+
+
+@app.delete("/api/session")
+async def delete_session(response: Response) -> dict[str, str]:
+    return _delete_session_response(response)
+
+
+def _delete_session_response(response: Response) -> dict[str, str]:
     response.delete_cookie(key=SESSION_COOKIE_NAME, samesite="lax", secure=False)
     return {"status": "signed_out"}
 
 
 @app.get("/auth/me", response_model=AuthSessionResponse)
 async def me(user: Annotated[AuthUser, Depends(get_current_user)]) -> AuthSessionResponse:
+    return AuthSessionResponse(user=user)
+
+
+@app.get("/api/session", response_model=AuthSessionResponse)
+async def current_session(
+    user: Annotated[AuthUser, Depends(get_current_user)],
+) -> AuthSessionResponse:
     return AuthSessionResponse(user=user)
 
 

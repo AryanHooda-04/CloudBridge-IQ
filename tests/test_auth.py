@@ -1,6 +1,8 @@
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.config import Settings
 from app.schemas import AuthLoginRequest
 from app.services.auth import authenticate_user, create_session_token, user_from_session_token
@@ -74,3 +76,21 @@ def test_session_token_rejects_tampering():
 
     with pytest.raises(HTTPException):
         user_from_session_token(f"{token}tampered", settings=settings)
+
+
+def test_api_session_alias_supports_render_safe_login_path():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/session",
+        json={"display_name": "Renu", "requested_role": "reviewer"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["primary_role"] == "reviewer"
+    assert "cloudbridge_iq_session" in response.cookies
+
+    me_response = client.get("/api/session")
+
+    assert me_response.status_code == 200
+    assert me_response.json()["user"]["display_name"] == "Renu"

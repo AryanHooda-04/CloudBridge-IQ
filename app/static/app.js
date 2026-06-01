@@ -154,7 +154,7 @@ authForm?.addEventListener("submit", async (event) => {
 
 logoutButton?.addEventListener("click", async () => {
   try {
-    await apiFetch(`${API_BASE}/auth/logout`, { method: "POST" });
+    await apiFetch(`${API_BASE}/api/session`, { method: "DELETE" });
   } finally {
     currentUser = null;
     applyRoleUi();
@@ -647,11 +647,11 @@ async function checkHealth() {
 async function initializeAuth() {
   document.body.classList.add("auth-locked");
   try {
-    const response = await apiFetch(`${API_BASE}/auth/me`);
+    const response = await apiFetch(`${API_BASE}/api/session`);
     if (!response.ok) {
       throw new Error("Authentication required.");
     }
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     currentUser = payload.user;
     applyRoleUi();
   } catch {
@@ -667,7 +667,7 @@ async function signIn() {
   const original = authSubmitButton.textContent;
   authSubmitButton.textContent = "Signing in";
   try {
-    const response = await apiFetch(`${API_BASE}/auth/login`, {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -677,9 +677,9 @@ async function signIn() {
         admin_password: authAdminPassword.value || null,
       }),
     });
-    const payload = await response.json();
+    const payload = await readApiPayload(response);
     if (!response.ok) {
-      throw new Error(payload.detail || "Sign-in failed.");
+      throw new Error(payload.detail || `Sign-in failed with HTTP ${response.status}.`);
     }
     currentUser = payload.user;
     applyRoleUi();
@@ -697,6 +697,29 @@ function apiFetch(url, options = {}) {
     credentials: "include",
     ...options,
   });
+}
+
+async function readApiPayload(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  const text = await response.text().catch(() => "");
+  return {
+    detail:
+      compactServerMessage(text) ||
+      `Server returned ${response.status} ${response.statusText || ""}`.trim(),
+  };
+}
+
+function compactServerMessage(value) {
+  const text = String(value || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.slice(0, 220) : "";
 }
 
 function showAuthOverlay(message = "") {
