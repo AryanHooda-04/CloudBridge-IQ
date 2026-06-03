@@ -28,9 +28,15 @@
           <button type="button" data-navigate-tab="agent"><span>AI</span>Agent</button>
           <button type="button" data-navigate-tab="report"><span>RP</span>Report</button>
         </nav>
-        <div class="sidebar-footer">
-          <span>Workspace</span>
-          <strong id="sidebarWorkspaceStatus">AI Draft</strong>
+        <div class="sidebar-footer sidebar-session">
+          <div class="user-chip" id="userChip" hidden>
+            <span class="user-avatar" id="userAvatar">U</span>
+            <div>
+              <span id="userRoleLabel">Signed in</span>
+              <strong id="userDisplayName">User</strong>
+            </div>
+            <button type="button" class="icon-button" id="logoutButton">Sign out</button>
+          </div>
         </div>
       </aside>
 
@@ -64,14 +70,6 @@
             Review
           </button>
           <div class="status-pill" id="apiStatus">Checking API</div>
-          <div class="user-chip" id="userChip" hidden>
-            <span class="user-avatar" id="userAvatar">U</span>
-            <div>
-              <span id="userRoleLabel">Signed in</span>
-              <strong id="userDisplayName">User</strong>
-            </div>
-            <button type="button" class="icon-button" id="logoutButton">Sign out</button>
-          </div>
         </div>
       </header>
 

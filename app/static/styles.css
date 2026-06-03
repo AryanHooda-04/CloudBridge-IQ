@@ -5291,3 +5291,76 @@ textarea {
   display: block;
   margin-top: 8px;
 }
+
+.topbar-actions {
+  align-items: center;
+  grid-template-columns: auto auto;
+}
+
+.sidebar-session {
+  align-items: stretch;
+  display: flex;
+  min-height: 112px;
+}
+
+.sidebar-session .user-chip {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(159, 179, 204, 0.22);
+  border-radius: 16px;
+  box-shadow: none;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  padding: 14px 14px 12px;
+  width: 100%;
+}
+
+.sidebar-session .user-chip[hidden] {
+  display: none;
+}
+
+.sidebar-session .user-avatar {
+  align-items: center;
+  align-self: start;
+  background: rgba(97, 155, 255, 0.16);
+  border: 1px solid rgba(151, 184, 255, 0.22);
+  color: #dce9ff;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.sidebar-session .user-chip div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sidebar-session .user-chip span:not(.user-avatar) {
+  color: #9fb3cc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sidebar-session .user-chip strong {
+  color: #ffffff;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.sidebar-session .user-chip .icon-button {
+  grid-column: 1 / -1;
+  justify-content: center;
+  margin-top: 2px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .sidebar-session {
+    min-height: auto;
+  }
+}
