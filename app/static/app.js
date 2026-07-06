@@ -8,6 +8,7 @@ const demoSampleGrid = document.querySelector("#demoSampleGrid");
 const demoSampleSummary = document.querySelector("#demoSampleSummary");
 const apiStatus = document.querySelector("#apiStatus");
 const resultTitle = document.querySelector("#resultTitle");
+const reportBreadcrumbs = document.querySelector("#reportBreadcrumbs");
 const submitButton = document.querySelector("#submitButton");
 const loadingState = document.querySelector("#loadingState");
 const errorState = document.querySelector("#errorState");
@@ -92,6 +93,10 @@ const wizardButtons = Array.from(document.querySelectorAll("[data-wizard-target]
 const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
 const HISTORY_KEY = "cloudMigrationAssessments.v2";
 const AUTH_THEME_KEY = "cloudbridge.auth.theme";
+const INTAKE_DRAFT_KEY = "cloudbridge.intakeDraft.v1";
+const LAST_REPORT_KEY = "cloudbridge.lastReport.v1";
+const DASHBOARD_FILTER_KEY = "cloudbridge.dashboardFilters.v1";
+const ASSESSMENT_TIMEOUT_MS = 120000;
 const TAB_GROUPS = {
   architecture: ["source", "diagram", "plan"],
   "risk-cost": ["risks", "cost"],
@@ -124,6 +129,15 @@ let latestComparisonBrief = "";
 let dashboardRenderSignature = "";
 let demoSampleRenderSignature = "";
 let runReadinessSignature = "";
+let dashboardFilters = loadDashboardFilters();
+let dashboardFilterFrame = 0;
+let intakeDraftRestoreAttempted = false;
+let isRestoringIntakeDraft = false;
+let intakeDraftSaveTimer = 0;
+let activeWorkspaceTab = "overview";
+let renderedPanelTokens = {};
+let comparisonPhaseTimer = null;
+let agentPhaseTimer = null;
 let snapshotCondensedState = null;
 let snapshotFrameRequest = 0;
 let currentResultRenderToken = 0;
@@ -325,6 +339,26 @@ document.addEventListener("click", async (event) => {
       openDashboardReport(id);
     } else if (dashboardButton.dataset.dashboardAction === "compare") {
       await compareDashboardReport(id);
+    } else if (dashboardButton.dataset.dashboardAction === "all") {
+      enterDashboardMode({ focusReports: true });
+    }
+    return;
+  }
+
+  if (event.target.closest("[data-dashboard-filter-clear]")) {
+    clearDashboardFilters();
+    return;
+  }
+
+  const reportNavButton = event.target.closest("[data-report-nav]");
+  if (reportNavButton) {
+    const action = reportNavButton.dataset.reportNav;
+    if (action === "dashboard") {
+      enterDashboardMode();
+    } else if (action === "all") {
+      enterDashboardMode({ focusReports: true });
+    } else if (action === "last") {
+      openLastReportFromDashboard();
     }
     return;
   }
@@ -404,6 +438,12 @@ document.addEventListener("click", async (event) => {
   const zoomAction = event.target.closest("[data-canvas-zoom]");
   if (zoomAction) {
     updateCanvasZoom(zoomAction.dataset.canvasZoom || "reset");
+    return;
+  }
+
+  const fullscreenAction = event.target.closest("[data-canvas-fullscreen]");
+  if (fullscreenAction) {
+    await toggleDiagramFullscreen();
     return;
   }
 
@@ -504,6 +544,11 @@ document.addEventListener("input", (event) => {
     if (latestResult && (event.target === architectNotes || event.target === reviewComments)) {
       refreshReviewStatusViews(latestResult);
     }
+    scheduleIntakeDraftSave();
+  }
+  if (event.target.matches("[data-dashboard-filter]")) {
+    updateDashboardFilter(event.target.dataset.dashboardFilter, event.target.value);
+    return;
   }
 });
 
@@ -538,6 +583,7 @@ document.addEventListener("change", async (event) => {
     syncProviderRouteBadges();
     setProviderTheme(latestResult || {});
     syncRunReadiness();
+    scheduleIntakeDraftSave();
     return;
   }
   if (event.target.matches("[data-relationship-field]")) {
@@ -551,6 +597,16 @@ document.addEventListener("change", async (event) => {
     if (latestResult) {
       renderResult(latestResult);
     }
+    scheduleIntakeDraftSave();
+    return;
+  }
+  if (event.target === architectureVariant) {
+    syncRunReadiness();
+    scheduleIntakeDraftSave();
+    return;
+  }
+  if (event.target.matches("[data-dashboard-filter]")) {
+    updateDashboardFilter(event.target.dataset.dashboardFilter, event.target.value);
     return;
   }
   if (event.target.matches("[data-diagram-control]")) {
@@ -565,9 +621,13 @@ document.addEventListener("change", async (event) => {
 goalsInput.addEventListener("input", () => {
   syncPresetStates();
   syncRunReadiness();
+  scheduleIntakeDraftSave();
 });
 
-migrationIntent?.addEventListener("input", syncRunReadiness);
+migrationIntent?.addEventListener("input", () => {
+  syncRunReadiness();
+  scheduleIntakeDraftSave();
+});
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
@@ -578,6 +638,7 @@ fileInput.addEventListener("change", () => {
   }
   setFilePreview(file);
   syncRunReadiness();
+  scheduleIntakeDraftSave();
 });
 
 dropZone.addEventListener("dragover", (event) => {
@@ -602,6 +663,7 @@ dropZone.addEventListener("drop", (event) => {
   renderDemoSampleSummary(null);
   setFilePreview(file);
   syncRunReadiness();
+  scheduleIntakeDraftSave();
 });
 
 previewFrame?.addEventListener("pointerdown", (event) => {
@@ -666,9 +728,12 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const fileBase64 = await readFileAsBase64(file);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), ASSESSMENT_TIMEOUT_MS);
     const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         action: "assessment",
         filename: file.name || "architecture-diagram",
@@ -679,7 +744,7 @@ form.addEventListener("submit", async (event) => {
         migration_intent: migrationIntent.value || null,
         goals: goalsWithVariant().join(", "),
       }),
-    });
+    }).finally(() => window.clearTimeout(timeoutId));
     const payload = await readApiPayload(response);
     if (!response.ok) {
       throw new Error(payload.detail || "Migration analysis failed.");
@@ -707,8 +772,13 @@ form.addEventListener("submit", async (event) => {
     showToast("Assessment complete. Review the decision snapshot and architecture workspace.", "success");
     enterAssessmentWorkspace("overview");
     rememberCompletedRun();
+    clearIntakeDraft();
   } catch (error) {
-    showError(error.message || "Migration analysis failed.");
+    if (error.name === "AbortError") {
+      showError("Assessment is taking longer than expected. The request was stopped after 120 seconds so the workspace stays responsive. Try again, or use a smaller diagram for the demo run.");
+    } else {
+      showError(error.message || "Migration analysis failed.");
+    }
     resultTitle.textContent = "Needs Attention";
   } finally {
     stopAssessmentTimeline();
@@ -1060,6 +1130,7 @@ async function loadDemoSamples() {
     demoSamples = Array.isArray(payload) ? payload : [];
     renderDemoSampleCards();
     renderDemoSampleSummary(selectedDemoSample());
+    restoreIntakeDraftAfterSamples();
   } catch (error) {
     demoSamples = [];
     demoSampleGrid.innerHTML = '<div class="demo-sample-empty">Samples unavailable.</div>';
@@ -1138,7 +1209,7 @@ function renderDemoSampleSummary(sample) {
   `;
 }
 
-async function applyDemoSample(sampleId) {
+async function applyDemoSample(sampleId, options = {}) {
   const sample = demoSamples.find((item) => item.id === sampleId);
   if (!sample) {
     return;
@@ -1183,8 +1254,14 @@ async function applyDemoSample(sampleId) {
     });
     syncAppFrame();
     syncRunReadiness();
-    setActiveIntakeStep(1);
-    showToast(`${sample.title} loaded.`, "success");
+    if (!options.keepStep) {
+      setActiveIntakeStep(1);
+    }
+    scheduleIntakeDraftSave();
+    saveIntakeDraft();
+    if (!options.silent) {
+      showToast(`${sample.title} loaded.`, "success");
+    }
   } catch (error) {
     showError(error.message || "Demo sample could not be loaded.");
   } finally {
@@ -1230,6 +1307,7 @@ function setActiveIntakeStep(step) {
     wizardNextButton.disabled = !hasPermission("can_assess");
   }
   syncRunReadiness();
+  scheduleIntakeDraftSave();
 }
 
 function canAdvanceFromIntakeStep(step) {
@@ -1377,15 +1455,17 @@ function renderAssessmentDashboard() {
     return;
   }
   const history = loadHistory();
-  const reports = buildDashboardReports(history);
+  const allReports = buildDashboardReports(history);
+  const reports = getFilteredDashboardReports(allReports);
+  const lastReport = loadLastReport();
   const currentReadiness = latestResult?.assessment_insights?.scores?.overall_readiness?.value;
   const currentVerdict = latestResult?.final_verdict?.recommendation || "not_run";
   const currentTarget = latestResult?.target_architecture?.provider || targetProvider.value || "aws";
   const currentTitle = projectNameInput?.value?.trim() || (latestResult ? buildHistoryTitle(latestResult) : "No assessment selected");
-  const total = reports.length;
-  const needsReview = reports.filter((item) => ["needs_review", "ai_draft"].includes(item.status || "ai_draft")).length;
-  const approved = reports.filter((item) => item.status === "approved").length;
-  const readinessValues = reports
+  const total = allReports.length;
+  const needsReview = allReports.filter((item) => ["needs_review", "ai_draft"].includes(item.status || "ai_draft")).length;
+  const approved = allReports.filter((item) => item.status === "approved").length;
+  const readinessValues = allReports
     .map((item) => item.result?.assessment_insights?.scores?.overall_readiness?.value)
     .filter((value) => Number.isFinite(Number(value)))
     .map(Number);
@@ -1401,7 +1481,10 @@ function renderAssessmentDashboard() {
     currentTarget,
     reviewStatus: reviewState.status,
     selectedHistoryId,
-    reports: reports.slice(0, 8).map((item) => [
+    filters: dashboardFilters,
+    lastReport,
+    filteredCount: reports.length,
+    reports: reports.map((item) => [
       item.id,
       item.title,
       item.status,
@@ -1433,7 +1516,12 @@ function renderAssessmentDashboard() {
         { label: "Approved", value: approved, detail: "Ready" },
         { label: "Readiness", value: `${avgReadiness}%`, detail: "Avg" },
       ],
-      rows: reports.slice(0, 8).map((item) => {
+      filters: dashboardFilters,
+      filterOptions: buildDashboardFilterOptions(allReports),
+      resultCount: reports.length,
+      totalCount: allReports.length,
+      lastReport,
+      rows: reports.map((item) => {
         const readiness = item.result?.assessment_insights?.scores?.overall_readiness?.value;
         return {
           id: item.id,
@@ -1452,6 +1540,9 @@ function renderAssessmentDashboard() {
       onCompare: compareDashboardReport,
       onReview: () => setReviewRailCollapsed(false),
       onNavigate: openLastReportFromDashboard,
+      onShowAll: () => enterDashboardMode({ focusReports: true }),
+      onFilterChange: updateDashboardFilter,
+      onClearFilters: clearDashboardFilters,
       onSignOut: signOut,
       session: currentUser
         ? {
@@ -1462,7 +1553,7 @@ function renderAssessmentDashboard() {
     });
     return;
   }
-  const recentRows = reports.slice(0, 8).map((item) => renderDashboardHistoryRow(item)).join("");
+  const recentRows = reports.map((item) => renderDashboardHistoryRow(item)).join("");
   assessmentDashboard.innerHTML = `
     <section class="dashboard-hero">
       <div>
@@ -1486,16 +1577,18 @@ function renderAssessmentDashboard() {
         <button type="button" class="diagram-link" id="dashboardOpenReviewButton">Review Rail</button>
       </div>
     </div>
+    ${renderDashboardRecoveryStrip(lastReport, allReports)}
     <div class="dashboard-kpi-grid">
       ${renderDashboardKpi("Reports", total, "Generated report history")}
       ${renderDashboardKpi("Needs Review", needsReview, "Drafts or gated assessments")}
       ${renderDashboardKpi("Approved", approved, "Ready for planning")}
       ${renderDashboardKpi("Avg Readiness", `${avgReadiness}%`, "Report history average")}
     </div>
+    ${renderDashboardFilterBar(allReports, reports)}
     <div class="dashboard-recent">
       <div class="dashboard-recent-header">
         <strong>Recent Assessments</strong>
-        <span>Status, reviewer, target cloud, readiness, and quick actions</span>
+        <span>${reports.length} of ${allReports.length} reports shown</span>
       </div>
       ${
         recentRows ||
@@ -1542,6 +1635,135 @@ function buildDashboardReports(history) {
     result: latestResult,
   };
   return [currentRecord, ...history.filter((item) => item.id !== currentRecord.id)];
+}
+
+function getFilteredDashboardReports(reports) {
+  const query = dashboardFilters.query.trim().toLowerCase();
+  const provider = dashboardFilters.provider || "all";
+  const status = dashboardFilters.status || "all";
+  const sort = dashboardFilters.sort || "updated_desc";
+
+  const visible = reports.filter((item) => {
+    const result = item.result || {};
+    const target = normalizeProviderKey(result.target_architecture?.provider || item.target_provider || "aws");
+    const source = normalizeProviderKey(result.source_architecture?.provider || item.source_provider || "auto");
+    const statusKey = item.status || "ai_draft";
+    const searchable = [
+      item.title,
+      item.projectName,
+      item.reviewer,
+      item.decisionOwner,
+      workflowLabel(statusKey),
+      target,
+      source,
+      item.goals,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    const providerMatch = provider === "all" || provider === target || provider === source;
+    const statusMatch = status === "all" || status === statusKey;
+    const queryMatch = !query || searchable.includes(query);
+    return providerMatch && statusMatch && queryMatch;
+  });
+
+  return visible.sort((a, b) => {
+    if (sort === "readiness_desc" || sort === "readiness_asc") {
+      const aValue = Number(a.result?.assessment_insights?.scores?.overall_readiness?.value ?? -1);
+      const bValue = Number(b.result?.assessment_insights?.scores?.overall_readiness?.value ?? -1);
+      return sort === "readiness_desc" ? bValue - aValue : aValue - bValue;
+    }
+    if (sort === "title_asc") {
+      return String(a.title || "").localeCompare(String(b.title || ""));
+    }
+    const aDate = new Date(a.last_modified_at || a.created_at || 0).getTime();
+    const bDate = new Date(b.last_modified_at || b.created_at || 0).getTime();
+    return bDate - aDate;
+  });
+}
+
+function buildDashboardFilterOptions(reports) {
+  const providers = new Set();
+  const statuses = new Set();
+  reports.forEach((item) => {
+    providers.add(normalizeProviderKey(item.result?.target_architecture?.provider || item.target_provider || "aws"));
+    providers.add(normalizeProviderKey(item.result?.source_architecture?.provider || item.source_provider || "auto"));
+    statuses.add(item.status || "ai_draft");
+  });
+  return {
+    providers: [...providers].filter((item) => item && item !== "neutral").sort(),
+    statuses: [...statuses].sort(),
+  };
+}
+
+function renderDashboardRecoveryStrip(lastReport, reports) {
+  const latest = reports[0];
+  const cardTitle = lastReport?.title || latest?.title || "No report opened yet";
+  const cardStatus = lastReport?.status ? workflowLabel(lastReport.status) : latest ? workflowLabel(latest.status || "ai_draft") : "Waiting";
+  const id = lastReport?.id || latest?.id || "";
+  return `
+    <section class="dashboard-recovery-strip" aria-label="Report recovery">
+      <div>
+        <p class="eyebrow">Report Recovery</p>
+        <strong>${escapeHtml(cardTitle)}</strong>
+        <span>${escapeHtml(cardStatus)}${lastReport?.openedAt ? ` | Last opened ${escapeHtml(formatDate(lastReport.openedAt))}` : ""}</span>
+      </div>
+      <div class="dashboard-command-actions">
+        <button type="button" class="diagram-link" data-dashboard-action="open" data-dashboard-id="${escapeAttribute(id)}" ${id ? "" : "disabled"}>Open last report</button>
+        <button type="button" class="diagram-link" data-dashboard-action="all">All reports (${reports.length})</button>
+      </div>
+    </section>
+  `;
+}
+
+function renderDashboardFilterBar(allReports, visibleReports) {
+  const options = buildDashboardFilterOptions(allReports);
+  return `
+    <section class="dashboard-filter-bar" aria-label="Report filters">
+      <label>
+        <span>Search reports</span>
+        <input data-dashboard-filter="query" value="${escapeAttribute(dashboardFilters.query)}" placeholder="Search title, reviewer, cloud, goals" />
+      </label>
+      <label>
+        <span>Cloud</span>
+        <select data-dashboard-filter="provider">
+          <option value="all">All clouds</option>
+          ${options.providers
+            .map(
+              (provider) =>
+                `<option value="${escapeAttribute(provider)}" ${dashboardFilters.provider === provider ? "selected" : ""}>${escapeHtml(providerShortLabel(provider))}</option>`,
+            )
+            .join("")}
+        </select>
+      </label>
+      <label>
+        <span>Status</span>
+        <select data-dashboard-filter="status">
+          <option value="all">All statuses</option>
+          ${options.statuses
+            .map(
+              (status) =>
+                `<option value="${escapeAttribute(status)}" ${dashboardFilters.status === status ? "selected" : ""}>${escapeHtml(workflowLabel(status))}</option>`,
+            )
+            .join("")}
+        </select>
+      </label>
+      <label>
+        <span>Sort</span>
+        <select data-dashboard-filter="sort">
+          <option value="updated_desc" ${dashboardFilters.sort === "updated_desc" ? "selected" : ""}>Newest updated</option>
+          <option value="readiness_desc" ${dashboardFilters.sort === "readiness_desc" ? "selected" : ""}>Readiness high to low</option>
+          <option value="readiness_asc" ${dashboardFilters.sort === "readiness_asc" ? "selected" : ""}>Readiness low to high</option>
+          <option value="title_asc" ${dashboardFilters.sort === "title_asc" ? "selected" : ""}>Title A to Z</option>
+        </select>
+      </label>
+      <div>
+        <strong>${visibleReports.length}</strong>
+        <span>of ${allReports.length} reports</span>
+        <button type="button" class="diagram-link" data-dashboard-filter-clear>Reset</button>
+      </div>
+    </section>
+  `;
 }
 
 function openLastReportFromDashboard() {
@@ -1636,9 +1858,11 @@ async function runAssessmentComparison(pair) {
       throw new Error(payload.detail || "Assessment comparison failed.");
     }
     renderAssessmentComparison(payload, pair);
+    stopComparisonPhases();
     renderComparisonReviewSignal(payload, pair);
     showToast(comparisonToastMessage(payload), "success");
   } catch (error) {
+    stopComparisonPhases();
     renderComparisonError(error.message || "Assessment comparison failed.", pair);
     showToast(error.message || "Assessment comparison failed.", "error");
   }
@@ -1676,11 +1900,51 @@ function renderComparisonLoading(pair) {
         <h3>Comparing architecture assessments</h3>
         <span>${escapeHtml(pair.baseline.title || "Baseline")} to ${escapeHtml(pair.current.title || "Current assessment")}</span>
       </div>
+      <div class="ai-phase-list" data-compare-phases>
+        ${renderAiPhase("Building context", "Packaging both reports, readiness scores, risks, and mappings.", true)}
+        ${renderAiPhase("Calling model", "Requesting an architecture-review comparison from the LLM.")}
+        ${renderAiPhase("Generating summary", "Formatting executive signal, deltas, governance actions, and next steps.")}
+      </div>
       <div class="compare-loading-grid" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>
     </section>
   `;
+  startComparisonPhases();
+}
+
+function renderAiPhase(title, detail, active = false, done = false) {
+  return `
+    <div class="ai-phase ${active ? "active" : ""} ${done ? "done" : ""}">
+      <span></span>
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </div>
+    </div>
+  `;
+}
+
+function startComparisonPhases() {
+  stopComparisonPhases();
+  let index = 0;
+  const phases = () => Array.from(document.querySelectorAll("[data-compare-phases] .ai-phase"));
+  const update = () => {
+    phases().forEach((phase, phaseIndex) => {
+      phase.classList.toggle("done", phaseIndex < index);
+      phase.classList.toggle("active", phaseIndex === index);
+    });
+    index = Math.min(index + 1, Math.max(0, phases().length - 1));
+  };
+  update();
+  comparisonPhaseTimer = window.setInterval(update, 1400);
+}
+
+function stopComparisonPhases() {
+  if (comparisonPhaseTimer) {
+    window.clearInterval(comparisonPhaseTimer);
+    comparisonPhaseTimer = null;
+  }
 }
 
 function renderAssessmentComparison(comparison, pair) {
@@ -1868,10 +2132,15 @@ function renderComparisonError(message, pair) {
     return;
   }
   assessmentCompareContent.innerHTML = `
-    <section class="compare-error-card">
-      <p class="eyebrow">Compare Failed</p>
-      <h3>Could not generate the assessment comparison</h3>
+    <section class="compare-error-card intentional-fallback">
+      <p class="eyebrow">Comparison Needs Retry</p>
+      <h3>The AI comparison did not complete cleanly</h3>
       <p>${escapeHtml(message)}</p>
+      <div class="ai-phase-list compact">
+        ${renderAiPhase("Context package", "Both assessments were selected and prepared.", false, true)}
+        ${renderAiPhase("Model response", "The LLM response could not be used for this request.", true)}
+        ${renderAiPhase("Next action", "Retry compare, or open both reports from the dashboard and review deltas manually.")}
+      </div>
       <button type="button" data-dashboard-action="compare" data-dashboard-id="${escapeAttribute(pair?.baseline?.id || "")}">Retry Compare</button>
     </section>
   `;
@@ -2171,6 +2440,7 @@ function renderResult(payload) {
   currentResultRenderToken += 1;
   diagramAssetsRenderToken = 0;
   reportAssetsRenderToken = 0;
+  renderedPanelTokens = {};
   setProviderTheme(payload);
   syncProviderRouteBadges(payload);
   selectedCanvasComponentId = payload.target_architecture?.components?.[0]?.id || null;
@@ -2178,28 +2448,86 @@ function renderResult(payload) {
   renderSummary(payload);
   renderAnalysisMeta(payload.analysis_metadata || {});
   renderQualityGates(payload);
-  overviewPanel.innerHTML = renderOverview(payload);
-  sourcePanel.innerHTML = renderSourceArchitecture(payload);
-  mappingPanel.innerHTML = renderMappings(payload.service_mappings || []);
-  diagramPanel.innerHTML = renderDiagram(payload);
-  planPanel.innerHTML = renderPlan(payload);
-  risksPanel.innerHTML = renderRisks(payload);
-  costPanel.innerHTML = renderCost(payload);
-  gatePanel.innerHTML = renderDecisionGate(payload);
-  reportPanel.innerHTML = renderReportMemo(payload);
-  injectReportProviderBrand(reportPanel, payload);
-  injectGeneratedDiagramIntoReport(reportPanel, payload);
+  resetResultPanelPlaceholders();
+  renderResultPanel("overview", payload);
   renderReviewPanel(payload);
-  updateDiagramControls();
-  syncZoomControls();
   resetAgentChat(payload);
   setViewMode(viewMode);
   toggleIntakePanel(true);
   applyRoleUi();
-  ensureAssetsForActiveTabs("overview");
+  activateTab(activeWorkspaceTab || "overview");
 }
 
-function enterDashboardMode() {
+function resetResultPanelPlaceholders() {
+  const placeholders = {
+    source: "Detected source components will render when you open this tab.",
+    mapping: "Service mappings will render when you open this tab.",
+    diagram: "The diagram workspace will render when you open this tab.",
+    plan: "Migration waves and cutover plan will render when you open this tab.",
+    risks: "Risk and readiness scoring will render when you open this tab.",
+    cost: "Cost and effort indicators will render when you open this tab.",
+    gate: "Decision gate checklist will render when you open this tab.",
+    report: "The executive and architect report will render when you open this tab.",
+  };
+  Object.entries(placeholders).forEach(([name, message]) => {
+    const panel = panelElementByName(name);
+    if (panel) {
+      panel.innerHTML = `<div class="empty-state">${escapeHtml(message)}</div>`;
+    }
+  });
+}
+
+function renderResultPanel(panelName, payload = latestResult) {
+  if (!payload || renderedPanelTokens[panelName] === currentResultRenderToken) {
+    return;
+  }
+  const panel = panelElementByName(panelName);
+  if (!panel && panelName !== "agent") {
+    return;
+  }
+  if (panelName === "overview") {
+    overviewPanel.innerHTML = renderOverview(payload);
+  } else if (panelName === "source") {
+    sourcePanel.innerHTML = renderSourceArchitecture(payload);
+  } else if (panelName === "mapping") {
+    mappingPanel.innerHTML = renderMappings(payload.service_mappings || []);
+  } else if (panelName === "diagram") {
+    diagramPanel.innerHTML = renderDiagram(payload);
+    updateDiagramControls();
+    syncZoomControls();
+  } else if (panelName === "plan") {
+    planPanel.innerHTML = renderPlan(payload);
+  } else if (panelName === "risks") {
+    risksPanel.innerHTML = renderRisks(payload);
+  } else if (panelName === "cost") {
+    costPanel.innerHTML = renderCost(payload);
+  } else if (panelName === "gate") {
+    gatePanel.innerHTML = renderDecisionGate(payload);
+  } else if (panelName === "report") {
+    reportPanel.innerHTML = renderReportMemo(payload);
+    injectReportProviderBrand(reportPanel, payload);
+    injectGeneratedDiagramIntoReport(reportPanel, payload);
+  }
+  renderedPanelTokens[panelName] = currentResultRenderToken;
+}
+
+function panelElementByName(panelName) {
+  const panels = {
+    overview: overviewPanel,
+    source: sourcePanel,
+    mapping: mappingPanel,
+    diagram: diagramPanel,
+    plan: planPanel,
+    risks: risksPanel,
+    cost: costPanel,
+    gate: gatePanel,
+    agent: document.querySelector("#agentPanel"),
+    report: reportPanel,
+  };
+  return panels[panelName] || null;
+}
+
+function enterDashboardMode(options = {}) {
   document.body.classList.add("dashboard-mode");
   document.body.classList.remove("workspace-mode");
   toggleIntakePanel(false);
@@ -2207,7 +2535,11 @@ function enterDashboardMode() {
   if (resultTitle) {
     resultTitle.textContent = "Dashboard";
   }
+  syncReportNavigation();
   renderAssessmentDashboard();
+  if (options.focusReports) {
+    scheduleIdleWork(() => assessmentDashboard?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
   syncSnapshotCondensed();
 }
 
@@ -2219,6 +2551,7 @@ function enterAssessmentWorkspace(tabName = "overview") {
     resultTitle.textContent = selectedHistoryId ? "Saved Assessment" : "Assessment";
   }
   activateTab(tabName);
+  syncReportNavigation(latestResult);
   syncSnapshotCondensed();
 }
 
@@ -2270,9 +2603,11 @@ async function askMigrationAgent() {
   agentChatHistory.push({ role: "user", content: question });
   agentChatInput.value = "";
   setAgentBusy(true);
-  const thinkingMessage = appendAgentMessage("assistant", "Thinking through the assessment context...", {
+  const thinkingMessage = appendAgentMessage("assistant", renderAgentThinkingContent(0), {
     transient: true,
+    html: true,
   });
+  startAgentPhases(thinkingMessage);
 
   try {
     const response = await apiFetch(`${API_BASE}/api/session`, {
@@ -2293,6 +2628,7 @@ async function askMigrationAgent() {
       requestError.status = response.status;
       throw requestError;
     }
+    stopAgentPhases();
     thinkingMessage?.remove();
     appendAgentMessage("assistant", payload.answer || "I could not generate an answer.");
     agentChatHistory.push({ role: "assistant", content: payload.answer || "" });
@@ -2300,9 +2636,10 @@ async function askMigrationAgent() {
     renderAgentSuggestionButtons(payload.suggested_questions || []);
     agentStatus.textContent = payload.used_assessment_context ? "Assessment aware" : "General guidance";
   } catch (error) {
+    stopAgentPhases();
     thinkingMessage?.remove();
     const fallbackAnswer = buildLocalAgentFallback(question, error);
-    appendAgentMessage("assistant", fallbackAnswer);
+    appendAgentMessage("assistant", fallbackAnswer, { fallback: true });
     agentChatHistory.push({ role: "assistant", content: fallbackAnswer });
     agentChatHistory = agentChatHistory.slice(-12);
     renderAgentSuggestionButtons([
@@ -2329,8 +2666,10 @@ function appendAgentMessage(role, content, options = {}) {
       <span class="agent-message-avatar">${role === "user" ? "You" : "CB"}</span>
       <strong>${label}</strong>
     </div>
-    <div class="agent-message-body">${
-      role === "assistant" ? renderMarkdown(content || "") : `<p>${escapeHtml(content || "")}</p>`
+    <div class="agent-message-body ${options.fallback ? "agent-fallback-body" : ""}">${
+      options.html
+        ? content || ""
+        : role === "assistant" ? renderMarkdown(content || "") : `<p>${escapeHtml(content || "")}</p>`
     }</div>
   `;
   agentChatLog.appendChild(message);
@@ -2342,6 +2681,47 @@ function setAgentBusy(isBusy) {
   agentChatSendButton.disabled = isBusy;
   agentChatSendButton.textContent = isBusy ? "Thinking" : "Ask Agent";
   agentChatInput.disabled = isBusy;
+}
+
+function renderAgentThinkingContent(activeIndex = 0) {
+  const phases = [
+    ["Building context", "Collecting the active report, mappings, risks, goals, and reviewer notes."],
+    ["Calling model", "Asking the migration agent for an assessment-specific answer."],
+    ["Grounding answer", "Checking the response shape and preparing a concise architect-style reply."],
+  ];
+  return `
+    <div class="agent-thinking-card">
+      <p class="eyebrow">Agent Working</p>
+      <div class="ai-phase-list compact">
+        ${phases
+          .map(([title, detail], index) => renderAiPhase(title, detail, index === activeIndex, index < activeIndex))
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function startAgentPhases(message) {
+  stopAgentPhases();
+  let index = 0;
+  const body = message?.querySelector(".agent-message-body");
+  const update = () => {
+    if (!body || !document.contains(body)) {
+      stopAgentPhases();
+      return;
+    }
+    body.innerHTML = renderAgentThinkingContent(index);
+    index = Math.min(index + 1, 2);
+  };
+  update();
+  agentPhaseTimer = window.setInterval(update, 1300);
+}
+
+function stopAgentPhases() {
+  if (agentPhaseTimer) {
+    window.clearInterval(agentPhaseTimer);
+    agentPhaseTimer = null;
+  }
 }
 
 function renderAgentSuggestionButtons(suggestions) {
@@ -2361,8 +2741,8 @@ function buildLocalAgentFallback(question, error) {
   const payload = latestResult;
   const lowerQuestion = String(question || "").toLowerCase();
   const unavailableNote = error?.status === 404
-    ? "The live chat route is not available in the currently running server, so I am using the loaded assessment locally."
-    : "The live chat service did not return an answer, so I am using the loaded assessment locally.";
+    ? "### Local Assessment Answer\nThe live agent route is not available in this server build, so I am answering from the loaded assessment context."
+    : "### Local Assessment Answer\nThe live agent did not return a usable response, so I am answering from the loaded assessment context.";
 
   if (!payload) {
     return `${unavailableNote}\n\nRun an assessment first, then I can answer from the detected source architecture, target design, mappings, risks, plan, cost estimate, and verdict.`;
@@ -3072,10 +3452,12 @@ function renderDiagram(payload) {
         </label>
         <div class="zoom-control" aria-label="Architecture diagram zoom">
           <button type="button" data-canvas-zoom="fit">Fit</button>
+          <button type="button" data-canvas-zoom="reset">Reset</button>
           <button type="button" data-canvas-zoom="100">100%</button>
           <button type="button" data-canvas-zoom="125">125%</button>
           <button type="button" data-canvas-zoom="150">150%</button>
           <button type="button" data-canvas-zoom="300">300%</button>
+          <button type="button" data-canvas-fullscreen>Full screen</button>
         </div>
       </section>
       <section class="diagram-section">
@@ -3091,6 +3473,7 @@ function renderDiagram(payload) {
         <div class="architecture-hero-shell">
           <div class="architecture-canvas">
             <div class="diagram-viewport">
+              <div class="diagram-pan-hint">Drag to pan. Use zoom controls for detail review.</div>
               <div class="diagram-image-wrap" id="diagramImageWrap" style="--diagram-zoom: ${diagramZoom}" tabindex="0" aria-label="Rendered architecture diagram viewport. Use scrollbars or drag after zooming.">
                 <div class="diagram-render-state">Rendering target diagram preview</div>
               </div>
@@ -4201,6 +4584,27 @@ function updateCanvasZoom(action) {
   syncZoomControls();
 }
 
+async function toggleDiagramFullscreen() {
+  const shell = document.querySelector(".architecture-hero-shell");
+  if (!shell) {
+    return;
+  }
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else if (shell.requestFullscreen) {
+      await shell.requestFullscreen();
+    } else {
+      shell.classList.toggle("diagram-fullscreen-fallback");
+      showToast("Fullscreen API unavailable; expanded diagram workspace instead.", "info");
+    }
+  } catch (error) {
+    shell.classList.toggle("diagram-fullscreen-fallback");
+    showToast(error.message || "Fullscreen unavailable; expanded diagram workspace instead.", "info");
+  }
+  requestAnimationFrame(() => updateDiagramPanAffordance());
+}
+
 function canPanDiagram(wrap) {
   return wrap.scrollWidth > wrap.clientWidth + 2 || wrap.scrollHeight > wrap.clientHeight + 2;
 }
@@ -4781,6 +5185,28 @@ function syncAppFrame(payload = latestResult) {
   if (sidebarWorkspaceStatus) {
     sidebarWorkspaceStatus.textContent = reviewLabel;
   }
+  syncReportNavigation(payload);
+}
+
+function syncReportNavigation(payload = latestResult) {
+  if (!reportBreadcrumbs) {
+    return;
+  }
+  if (document.body.classList.contains("dashboard-mode")) {
+    reportBreadcrumbs.innerHTML = "";
+    reportBreadcrumbs.hidden = true;
+    return;
+  }
+  const title = projectNameInput?.value?.trim() || (payload ? buildHistoryTitle(payload) : "Assessment");
+  const reportLabel = selectedHistoryId ? "Saved report" : "Current report";
+  reportBreadcrumbs.hidden = false;
+  reportBreadcrumbs.innerHTML = `
+    <button type="button" data-report-nav="dashboard">Dashboard</button>
+    <span>/</span>
+    <button type="button" data-report-nav="all">All reports</button>
+    <span>/</span>
+    <strong>${escapeHtml(reportLabel)}: ${escapeHtml(title)}</strong>
+  `;
 }
 
 function providerRouteMarkup(sourceProviderName, targetProviderName, options = {}) {
@@ -5209,13 +5635,19 @@ function renderReportMemo(payload) {
     <section class="report-mode-banner">
       <div>
         <p class="eyebrow">Report Mode</p>
-        <strong>Executive decision pack</strong>
-        <span class="architect-only">Architect mode also includes full mappings, assumptions, risks, target design, and implementation detail.</span>
+        <strong>Executive summary first, architect detail second</strong>
+        <span class="architect-only">Architect mode adds full mappings, assumptions, risks, target design, and implementation detail after the executive brief.</span>
       </div>
       <div class="view-toggle inline-mode-toggle" aria-label="Report mode">
         <button type="button" class="${viewMode === "executive" ? "active" : ""}" data-view-mode="executive">Executive</button>
         <button type="button" class="${viewMode === "architect" ? "active" : ""}" data-view-mode="architect">Architect</button>
       </div>
+    </section>
+
+    <section class="report-section-heading">
+      <p class="eyebrow">Executive Summary</p>
+      <h3>Business decision signal</h3>
+      <span>Use this first page for leadership review, steering committee updates, and migration go/no-go discussion.</span>
     </section>
 
     <section class="report-memo-cover">
@@ -5250,6 +5682,8 @@ function renderReportMemo(payload) {
       </div>
     </section>
 
+    ${renderReportActionMatrix(payload)}
+
     <section class="report-decision-grid">
       ${renderReportDecisionCard("Decision Gate", buildQualityGateItems(payload).slice(0, 4).map((gate) => `${gate.label}: ${gate.value}`))}
       ${renderReportDecisionCard("Mapping Review", (payload.service_mappings || []).slice(0, 5).map((mapping) => `${mapping.source_service} -> ${mapping.target_service}`))}
@@ -5258,6 +5692,11 @@ function renderReportMemo(payload) {
     </section>
 
     <section class="report-architect-pack architect-only">
+      <section class="report-section-heading">
+        <p class="eyebrow">Architect Detail</p>
+        <h3>Implementation review packet</h3>
+        <span>Use this section for mapping validation, assumption burn-down, risk ownership, cutover planning, and design approval.</span>
+      </section>
       <div class="section-header">
         <div>
           <p class="eyebrow">Architect Appendix</p>
@@ -5274,6 +5713,20 @@ function renderReportMemo(payload) {
 
     <section class="report-document architect-only">
       ${renderMarkdown(payload.markdown_report || "")}
+    </section>
+  `;
+}
+
+function renderReportActionMatrix(payload) {
+  const gates = buildQualityGateItems(payload);
+  const blockers = gates.filter((gate) => gate.status === "block");
+  const warnings = gates.filter((gate) => gate.status === "warn");
+  const actions = payload.assessment_insights?.review?.suggested_next_actions || [];
+  return `
+    <section class="report-action-matrix">
+      ${renderReportDecisionCard("Approval blockers", blockers.map((gate) => `${gate.label}: ${gate.detail}`))}
+      ${renderReportDecisionCard("Review warnings", warnings.map((gate) => `${gate.label}: ${gate.detail}`))}
+      ${renderReportDecisionCard("Immediate actions", actions)}
     </section>
   `;
 }
@@ -5485,8 +5938,9 @@ async function saveCurrentAssessment() {
   };
   const withoutExisting = history.filter((item) => item.id !== record.id);
   withoutExisting.unshift(record);
-  persistHistory(withoutExisting.slice(0, 12));
+  persistHistory(withoutExisting);
   selectedHistoryId = record.id;
+  rememberLastReport(record);
   renderHistory();
   syncAppFrame();
   try {
@@ -5565,8 +6019,9 @@ function rememberCompletedRun() {
     result: latestResult,
   };
   const withoutExisting = history.filter((item) => item.id !== record.id);
-  persistHistory([record, ...withoutExisting].slice(0, 12));
+  persistHistory([record, ...withoutExisting]);
   selectedHistoryId = record.id;
+  rememberLastReport(record);
   renderHistory();
   syncAppFrame();
 }
@@ -5609,6 +6064,7 @@ function openHistoryItem(id) {
     goalsInput.value = record.goals;
     syncPresetStates();
   }
+  rememberLastReport(record);
   renderResult(latestResult);
   enableActions(true);
   resultTitle.textContent = "Saved Assessment";
@@ -5840,6 +6296,173 @@ function persistHistory(history) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
+function loadDashboardFilters() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_FILTER_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return {
+      query: String(parsed.query || ""),
+      provider: String(parsed.provider || "all"),
+      status: String(parsed.status || "all"),
+      sort: String(parsed.sort || "updated_desc"),
+    };
+  } catch {
+    return { query: "", provider: "all", status: "all", sort: "updated_desc" };
+  }
+}
+
+function persistDashboardFilters() {
+  localStorage.setItem(DASHBOARD_FILTER_KEY, JSON.stringify(dashboardFilters));
+}
+
+function updateDashboardFilter(key, value) {
+  if (!key) {
+    return;
+  }
+  dashboardFilters = {
+    ...dashboardFilters,
+    [key]: value,
+  };
+  persistDashboardFilters();
+  scheduleDashboardRender();
+}
+
+function clearDashboardFilters() {
+  dashboardFilters = { query: "", provider: "all", status: "all", sort: "updated_desc" };
+  persistDashboardFilters();
+  scheduleDashboardRender();
+}
+
+function scheduleDashboardRender() {
+  dashboardRenderSignature = "";
+  if (dashboardFilterFrame) {
+    return;
+  }
+  dashboardFilterFrame = window.requestAnimationFrame(() => {
+    dashboardFilterFrame = 0;
+    renderAssessmentDashboard();
+  });
+}
+
+function rememberLastReport(record) {
+  if (!record?.id) {
+    return;
+  }
+  const lastReport = {
+    id: record.id,
+    title: String(record.title || record.projectName || "Migration assessment").replace(/^Current:\s*/i, ""),
+    status: record.status || reviewState.status || "ai_draft",
+    target: record.result?.target_architecture?.provider || record.target_provider || targetProvider.value || "aws",
+    readiness: record.result?.assessment_insights?.scores?.overall_readiness?.value ?? null,
+    openedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(LAST_REPORT_KEY, JSON.stringify(lastReport));
+}
+
+function loadLastReport() {
+  try {
+    const raw = localStorage.getItem(LAST_REPORT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function scheduleIntakeDraftSave() {
+  if (isRestoringIntakeDraft) {
+    return;
+  }
+  window.clearTimeout(intakeDraftSaveTimer);
+  intakeDraftSaveTimer = window.setTimeout(saveIntakeDraft, 180);
+}
+
+function saveIntakeDraft() {
+  if (isRestoringIntakeDraft) {
+    return;
+  }
+  const file = fileInput?.files?.[0] || null;
+  const draft = {
+    savedAt: new Date().toISOString(),
+    activeIntakeStep,
+    selectedDemoSampleId,
+    sourceProvider: sourceProvider?.value || "auto",
+    targetProvider: targetProvider?.value || "aws",
+    goals: goalsInput?.value || "",
+    migrationIntent: migrationIntent?.value || "",
+    architectureVariant: architectureVariant?.value || "balanced",
+    architecturePattern: architecturePattern?.value || "auto",
+    projectName: projectNameInput?.value || "",
+    file: file
+      ? {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified,
+          restorable: Boolean(selectedDemoSampleId),
+        }
+      : null,
+  };
+  try {
+    localStorage.setItem(INTAKE_DRAFT_KEY, JSON.stringify(draft));
+  } catch (error) {
+    console.warn("Unable to save intake draft.", error);
+  }
+}
+
+async function restoreIntakeDraftAfterSamples() {
+  if (intakeDraftRestoreAttempted) {
+    return;
+  }
+  intakeDraftRestoreAttempted = true;
+  let draft = null;
+  try {
+    const raw = localStorage.getItem(INTAKE_DRAFT_KEY);
+    draft = raw ? JSON.parse(raw) : null;
+  } catch {
+    draft = null;
+  }
+  if (!draft) {
+    return;
+  }
+
+  isRestoringIntakeDraft = true;
+  try {
+    const sampleId = draft.selectedDemoSampleId || "";
+    if (sampleId && demoSamples.some((sample) => sample.id === sampleId)) {
+      await applyDemoSample(sampleId, { silent: true, keepStep: true });
+    }
+    if (sourceProvider) sourceProvider.value = draft.sourceProvider || sourceProvider.value;
+    if (targetProvider) targetProvider.value = draft.targetProvider || targetProvider.value;
+    if (goalsInput) goalsInput.value = draft.goals || goalsInput.value || "";
+    if (migrationIntent) migrationIntent.value = draft.migrationIntent || migrationIntent.value || "";
+    setSelectValue(architectureVariant, draft.architectureVariant || architectureVariant?.value || "balanced");
+    setSelectValue(architecturePattern, draft.architecturePattern || architecturePattern?.value || "auto");
+    if (projectNameInput) {
+      projectNameInput.value = draft.projectName || projectNameInput.value || "";
+      reviewState.projectName = projectNameInput.value;
+    }
+    selectedDemoSampleId = sampleId || selectedDemoSampleId;
+    demoSampleRenderSignature = "";
+    renderDemoSampleCards();
+    renderDemoSampleSummary(selectedDemoSample());
+    syncPresetStates();
+    syncProviderRouteBadges();
+    syncRunReadiness();
+    setActiveIntakeStep(Number(draft.activeIntakeStep || 0));
+    if (draft.file && !draft.file.restorable && !fileInput.files?.[0]) {
+      showToast(`Draft restored. Re-select ${draft.file.name} to run the assessment.`, "info");
+    } else {
+      showToast("New run draft restored.", "success");
+    }
+  } finally {
+    isRestoringIntakeDraft = false;
+  }
+}
+
+function clearIntakeDraft() {
+  localStorage.removeItem(INTAKE_DRAFT_KEY);
+}
+
 function buildHistoryTitle(payload) {
   const provider = formatProvider(payload?.source_architecture?.provider || "source");
   const target = (payload?.target_architecture?.provider || "aws").toUpperCase();
@@ -5980,7 +6603,9 @@ function inlineMarkdown(value) {
 }
 
 function activateTab(tabName) {
+  activeWorkspaceTab = tabName || "overview";
   const panelNames = resolveTabPanels(tabName);
+  panelNames.forEach((panelName) => renderResultPanel(panelName));
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.classList.toggle("active", tabMatches(tab.dataset.tab, tabName, panelNames));
   });

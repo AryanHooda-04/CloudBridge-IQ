@@ -11246,3 +11246,275 @@ body.workspace-mode .info-card {
   user-select: none;
   -webkit-user-drag: none;
 }
+
+/* Enterprise UX upgrades: report recovery, filters, AI phases, and diagram controls. */
+.report-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.report-breadcrumbs[hidden] {
+  display: none;
+}
+
+.report-breadcrumbs button {
+  border: 0;
+  background: transparent;
+  color: #0369a1;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.report-breadcrumbs button:hover,
+.report-breadcrumbs button:focus-visible {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.report-breadcrumbs strong {
+  color: #0f172a;
+  max-width: min(52vw, 720px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-recovery-strip,
+.dashboard-filter-bar {
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.92), rgba(255, 255, 255, 0.96));
+  border-radius: 1.35rem;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.055);
+}
+
+.dashboard-recovery-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+}
+
+.dashboard-recovery-strip strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.dashboard-recovery-strip span {
+  display: block;
+  margin-top: 0.25rem;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.dashboard-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 0.8fr)) auto;
+  gap: 0.8rem;
+  align-items: end;
+  padding: 1rem;
+}
+
+.dashboard-filter-bar label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.dashboard-filter-bar label span,
+.dashboard-filter-bar > div span {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.dashboard-filter-bar input,
+.dashboard-filter-bar select {
+  min-height: 2.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.92);
+  color: #172033;
+  font-weight: 700;
+  padding: 0.62rem 0.78rem;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.dashboard-filter-bar input:focus,
+.dashboard-filter-bar select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.14);
+}
+
+.dashboard-filter-bar > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  white-space: nowrap;
+}
+
+.dashboard-filter-bar > div strong {
+  color: #0f172a;
+  font-size: 1.2rem;
+}
+
+.ai-phase-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.ai-phase-list.compact {
+  margin-top: 0.7rem;
+  gap: 0.55rem;
+}
+
+.ai-phase {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  color: #64748b;
+}
+
+.ai-phase > span {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.15rem;
+  border: 2px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.ai-phase strong {
+  display: block;
+  color: #334155;
+  font-size: 0.84rem;
+}
+
+.ai-phase small {
+  display: block;
+  margin-top: 0.16rem;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.ai-phase.active > span {
+  border-color: #2563eb;
+  background: #2563eb;
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.13);
+}
+
+.ai-phase.done > span {
+  border-color: #10b981;
+  background: #10b981;
+}
+
+.agent-thinking-card {
+  padding: 0.25rem 0;
+}
+
+.agent-fallback-body {
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.78), rgba(255, 255, 255, 0.92));
+  padding: 0.95rem;
+}
+
+.diagram-pan-hint {
+  position: absolute;
+  z-index: 3;
+  top: 0.85rem;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid rgba(125, 211, 252, 0.55);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #0369a1;
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 0.45rem 0.75rem;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+}
+
+.architecture-hero-shell:fullscreen {
+  overflow: auto;
+  background: #eef7ff;
+  padding: 1rem;
+}
+
+.architecture-hero-shell:fullscreen .diagram-image-wrap,
+.architecture-hero-shell.diagram-fullscreen-fallback .diagram-image-wrap {
+  min-height: 78vh;
+}
+
+.architecture-hero-shell.diagram-fullscreen-fallback {
+  position: fixed;
+  inset: 1rem;
+  z-index: 90;
+  overflow: auto;
+  border-radius: 1.5rem;
+  background: #eef7ff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  padding: 1rem;
+}
+
+.report-section-heading {
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 1.2rem;
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.82), rgba(255, 255, 255, 0.96));
+  padding: 1.1rem;
+}
+
+.report-section-heading h3 {
+  margin: 0.15rem 0 0;
+  color: #0f172a;
+  font-size: 1.15rem;
+}
+
+.report-section-heading span {
+  display: block;
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.report-action-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-recovery-strip,
+  .dashboard-filter-bar,
+  .report-action-matrix {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-filter-bar > div {
+    justify-content: flex-start;
+  }
+
+  .report-breadcrumbs strong {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

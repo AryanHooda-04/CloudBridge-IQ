@@ -182,6 +182,81 @@ function AssessmentRow({ row, onOpen, onCompare }) {
   );
 }
 
+function DashboardRecovery({ lastReport, totalCount, onOpen, onShowAll }) {
+  return (
+    <section className="grid gap-4 rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50/90 to-white p-4 shadow-sm shadow-sky-900/5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-normal text-sky-700">Report Recovery</p>
+        <strong className="block truncate text-base font-semibold text-slate-950">{lastReport?.title || "No report opened yet"}</strong>
+        <span className="mt-1 block text-xs font-semibold text-slate-500">
+          {lastReport?.status || "Open a report to pin it here"}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2 md:justify-end">
+        <Button disabled={!lastReport?.id} onClick={() => lastReport?.id && onOpen?.(lastReport.id)}>
+          Open last report
+        </Button>
+        <Button onClick={onShowAll}>All reports ({totalCount})</Button>
+      </div>
+    </section>
+  );
+}
+
+function DashboardFilters({
+  filters = {},
+  filterOptions = { providers: [], statuses: [] },
+  resultCount = 0,
+  totalCount = 0,
+  onFilterChange,
+  onClearFilters,
+}) {
+  const change = (key) => (event) => onFilterChange?.(key, event.target.value);
+  return (
+    <section className="grid gap-3 rounded-2xl border border-slate-200/75 bg-white/80 p-4 shadow-sm shadow-slate-950/5 backdrop-blur md:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(150px,0.8fr))_auto] md:items-end">
+      <label className="grid gap-1.5">
+        <span className="text-[11px] font-bold uppercase text-slate-500">Search</span>
+        <input
+          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15"
+          value={filters.query || ""}
+          onChange={change("query")}
+          placeholder="Search reports"
+        />
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-[11px] font-bold uppercase text-slate-500">Cloud</span>
+        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.provider || "all"} onChange={change("provider")}>
+          <option value="all">All clouds</option>
+          {(filterOptions.providers || []).map((provider) => (
+            <option key={provider} value={provider}>{providerLabel(provider)}</option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-[11px] font-bold uppercase text-slate-500">Status</span>
+        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.status || "all"} onChange={change("status")}>
+          <option value="all">All statuses</option>
+          {(filterOptions.statuses || []).map((status) => (
+            <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-1.5">
+        <span className="text-[11px] font-bold uppercase text-slate-500">Sort</span>
+        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.sort || "updated_desc"} onChange={change("sort")}>
+          <option value="updated_desc">Newest updated</option>
+          <option value="readiness_desc">Readiness high to low</option>
+          <option value="readiness_asc">Readiness low to high</option>
+          <option value="title_asc">Title A to Z</option>
+        </select>
+      </label>
+      <div className="flex items-center gap-3 md:justify-end">
+        <span className="text-xs font-bold text-slate-500">{resultCount} / {totalCount}</span>
+        <Button className="min-h-10 px-3" onClick={onClearFilters}>Reset</Button>
+      </div>
+    </section>
+  );
+}
+
 function DemoSamples({ samples = [], selectedId = "", apiBase = "", canSelect = true, onSelect }) {
   if (!samples.length) {
     return (
@@ -256,11 +331,19 @@ function Dashboard({
   current,
   kpis = [],
   rows = [],
+  filters = {},
+  filterOptions = { providers: [], statuses: [] },
+  resultCount = 0,
+  totalCount = 0,
+  lastReport = null,
   session = null,
   onOpen,
   onCompare,
   onReview,
   onNavigate,
+  onShowAll,
+  onFilterChange,
+  onClearFilters,
   onSignOut,
 }) {
   return (
@@ -305,16 +388,27 @@ function Dashboard({
           </div>
         </div>
 
+        <DashboardRecovery lastReport={lastReport} totalCount={totalCount} onOpen={onOpen} onShowAll={onShowAll} />
+
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {kpis.map((kpi, index) => (
             <StatCard key={kpi.label} index={index} {...kpi} />
           ))}
         </div>
 
+        <DashboardFilters
+          filters={filters}
+          filterOptions={filterOptions}
+          resultCount={resultCount}
+          totalCount={totalCount}
+          onFilterChange={onFilterChange}
+          onClearFilters={onClearFilters}
+        />
+
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
             <strong className="text-sm font-semibold text-slate-950">History</strong>
-            <span className="text-xs font-semibold text-slate-500">Status, reviewer, target cloud, readiness, and quick actions</span>
+            <span className="text-xs font-semibold text-slate-500">{resultCount} of {totalCount} reports shown</span>
           </div>
           {rows.length ? (
             rows.map((row) => <AssessmentRow key={row.id} row={row} onOpen={onOpen} onCompare={onCompare} />)
