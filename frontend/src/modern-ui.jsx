@@ -257,6 +257,54 @@ function DashboardFilters({
   );
 }
 
+const faqItems = [
+  {
+    question: "What should I use CloudBridge IQ for day to day?",
+    answer:
+      "Use it as a migration intake and review workspace: capture a diagram, confirm the route and goals, generate an assessment, then review risks, mappings, and reports with architects.",
+  },
+  {
+    question: "Do I need a perfect architecture diagram?",
+    answer:
+      "No. A clear PNG or PDF with service labels is enough for a first pass. Low-confidence mappings are flagged so an architect can validate assumptions before approval.",
+  },
+  {
+    question: "When should I use Compare?",
+    answer:
+      "Use Compare when you have more than one assessment and want a portfolio-level delta: readiness movement, verdict changes, blockers, and what changed between two runs.",
+  },
+  {
+    question: "Where do reports and drafts live?",
+    answer:
+      "Completed assessments appear in Recent Runs. The dashboard keeps last opened report recovery, and the New Run workflow autosaves route, goals, and selected sample context while you work.",
+  },
+];
+
+function DashboardHelp() {
+  return (
+    <section className="grid gap-4 rounded-[2rem] border border-sky-100/90 bg-gradient-to-br from-sky-50/90 via-white/90 to-indigo-50/60 p-5 shadow-lg shadow-sky-950/5 ring-1 ring-white/70 lg:p-6">
+      <div className="max-w-3xl">
+        <p className="mb-1 text-[11px] font-black uppercase tracking-normal text-sky-700">FAQ & daily workflow</p>
+        <h3 className="m-0 text-xl font-semibold tracking-tight text-slate-950">Use the agent like a migration review desk</h3>
+        <span className="mt-1 block text-sm font-medium leading-6 text-slate-600">
+          Start with intake, run the assessment, then use the report, compare, and agent views to support review meetings and follow-up actions.
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {faqItems.map((item) => (
+          <article
+            key={item.question}
+            className="rounded-2xl border border-white/80 bg-white/90 p-4 shadow-sm shadow-slate-950/5 transition-all duration-200 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-md hover:shadow-sky-900/10"
+          >
+            <strong className="block text-sm font-semibold leading-6 text-slate-950">{item.question}</strong>
+            <span className="mt-2 block text-sm font-medium leading-6 text-slate-600">{item.answer}</span>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function DemoSamples({ samples = [], selectedId = "", apiBase = "", canSelect = true, onSelect }) {
   if (!samples.length) {
     return (
@@ -344,6 +392,7 @@ function Dashboard({
   onShowAll,
   onFilterChange,
   onClearFilters,
+  onHowTo,
   onSignOut,
 }) {
   return (
@@ -368,6 +417,9 @@ function Dashboard({
           ) : null}
           <Button data-dashboard-sign-out className="px-4" onClick={onSignOut}>
             Sign out
+          </Button>
+          <Button variant="primary" className="px-4" onClick={onHowTo}>
+            How to use
           </Button>
         </div>
       </section>

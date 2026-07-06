@@ -11371,6 +11371,310 @@ body.workspace-mode .info-card {
   font-size: 1.2rem;
 }
 
+.dashboard-help-section {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 2rem;
+  background:
+    linear-gradient(135deg, rgba(240, 249, 255, 0.88), rgba(255, 255, 255, 0.94), rgba(238, 242, 255, 0.64));
+  box-shadow: 0 18px 44px rgba(14, 116, 144, 0.07);
+  padding: 1.25rem;
+}
+
+.intake-faq-section {
+  margin-top: 1.1rem;
+}
+
+.dashboard-help-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dashboard-help-intro h3 {
+  margin: 0.15rem 0 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  letter-spacing: 0;
+}
+
+.dashboard-help-intro span {
+  display: block;
+  max-width: 760px;
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.65;
+}
+
+.primary-action.compact {
+  min-height: 2.6rem;
+  width: auto;
+  padding-inline: 1.15rem;
+  white-space: nowrap;
+}
+
+.dashboard-faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.dashboard-faq-card {
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.045);
+  padding: 1rem;
+  transition: border-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+}
+
+.dashboard-faq-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(56, 189, 248, 0.42);
+  box-shadow: 0 16px 34px rgba(14, 116, 144, 0.09);
+}
+
+.dashboard-faq-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.dashboard-faq-card span {
+  display: block;
+  margin-top: 0.55rem;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.6;
+}
+
+body.help-open {
+  overflow: hidden;
+}
+
+.help-drawer[hidden] {
+  display: none !important;
+}
+
+.help-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  display: grid;
+  place-items: stretch end;
+}
+
+.help-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background:
+    radial-gradient(circle at 75% 15%, rgba(14, 165, 233, 0.2), transparent 32%),
+    rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.help-drawer-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(920px, calc(100vw - 40px));
+  height: calc(100vh - 40px);
+  margin: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(240, 249, 255, 0.96)),
+    radial-gradient(circle at 100% 0%, rgba(14, 165, 233, 0.14), transparent 34%);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.26);
+  animation: comparePanelIn 180ms ease both;
+}
+
+.help-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 1.35rem 1.5rem;
+  backdrop-filter: blur(14px);
+}
+
+.help-drawer-header h2 {
+  margin: 0;
+  color: #020617;
+  font-size: 1.5rem;
+  letter-spacing: 0;
+}
+
+.help-drawer-header span {
+  display: block;
+  margin-top: 0.25rem;
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.help-drawer-header button {
+  min-height: 2.4rem;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 0.8rem;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  padding: 0 0.95rem;
+  transition: border-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+}
+
+.help-drawer-header button:hover {
+  transform: translateY(-1px);
+  border-color: #38bdf8;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.help-drawer-content {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  overflow: auto;
+  padding: 1.35rem 1.5rem 1.75rem;
+}
+
+.help-hero-card,
+.help-step-card,
+.help-mode-grid article,
+.help-faq-list {
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 1.35rem;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.055);
+}
+
+.help-hero-card {
+  padding: 1.25rem;
+}
+
+.help-hero-card h3 {
+  max-width: 760px;
+  margin: 0.2rem 0 0;
+  color: #0f172a;
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+
+.help-hero-card p {
+  max-width: 790px;
+  margin: 0.65rem 0 0;
+  color: #475569;
+  font-weight: 650;
+  line-height: 1.7;
+}
+
+.help-step-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.help-step-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.help-step-card > span {
+  display: inline-grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 950;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.2);
+}
+
+.help-step-card strong,
+.help-mode-grid strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.help-step-card p,
+.help-mode-grid p,
+.help-faq-list p {
+  margin: 0.4rem 0 0;
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.62;
+}
+
+.help-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.help-mode-grid article {
+  padding: 1rem;
+}
+
+.help-mode-grid span {
+  display: inline-flex;
+  margin-bottom: 0.55rem;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.68rem;
+  font-weight: 900;
+  padding: 0.28rem 0.55rem;
+  text-transform: uppercase;
+}
+
+.help-faq-list {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.help-faq-list h3 {
+  margin: 0 0 0.25rem;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.help-faq-list details {
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 1rem;
+  background: #f8fafc;
+  padding: 0.8rem 0.9rem;
+}
+
+.help-faq-list summary {
+  color: #0f172a;
+  cursor: pointer;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
 .ai-phase-list {
   display: grid;
   gap: 0.7rem;
@@ -11505,8 +11809,31 @@ body.workspace-mode .info-card {
 @media (max-width: 900px) {
   .dashboard-recovery-strip,
   .dashboard-filter-bar,
+  .dashboard-help-intro,
+  .dashboard-faq-grid,
+  .help-step-grid,
+  .help-mode-grid,
   .report-action-matrix {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-help-intro {
+    align-items: stretch;
+  }
+
+  .help-drawer {
+    place-items: stretch;
+  }
+
+  .help-drawer-panel {
+    width: auto;
+    height: calc(100vh - 20px);
+    margin: 10px;
+    border-radius: 1.25rem;
+  }
+
+  .help-drawer-header {
+    flex-direction: column;
   }
 
   .dashboard-filter-bar > div {

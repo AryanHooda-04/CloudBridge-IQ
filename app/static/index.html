@@ -13,8 +13,8 @@
         document.documentElement.classList.remove("dark");
       }
     </script>
-    <link rel="stylesheet" href="react/modern-ui.css?v=enterprise-ux-20260706" />
-    <link rel="stylesheet" href="styles.css?v=enterprise-ux-20260706" />
+    <link rel="stylesheet" href="react/modern-ui.css?v=faq-help-20260706" />
+    <link rel="stylesheet" href="styles.css?v=faq-help-20260706" />
   </head>
   <body class="dashboard-mode">
     <div class="app-shell">
@@ -280,6 +280,7 @@
               <button type="button" class="primary-action wizard-next-button" id="wizardNextButton">Next</button>
             </div>
           </form>
+          <div class="intake-faq-section" id="intakeFaqSection" aria-label="FAQ and daily workflow"></div>
         </section>
 
         <section class="results-panel" aria-label="Assessment results">
@@ -640,6 +641,28 @@
     </section>
 
     <section
+      class="help-drawer"
+      id="dashboardHelpDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dashboardHelpTitle"
+      hidden
+    >
+      <button type="button" class="help-drawer-backdrop" data-help-close aria-label="Close help guide"></button>
+      <div class="help-drawer-panel">
+        <header class="help-drawer-header">
+          <div>
+            <p class="eyebrow">CloudBridge IQ Guide</p>
+            <h2 id="dashboardHelpTitle">How to use the migration agent</h2>
+            <span>Daily workflow, common questions, and review habits for project demos and real assessments.</span>
+          </div>
+          <button type="button" data-help-close aria-label="Close help guide">Close</button>
+        </header>
+        <div class="help-drawer-content" id="dashboardHelpContent"></div>
+      </div>
+    </section>
+
+    <section
       class="auth-overlay fixed inset-0 z-[100] flex min-h-screen items-start justify-center overflow-y-auto bg-gradient-to-br from-slate-100 via-white to-blue-100 px-4 py-6 text-slate-950 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950 dark:text-white sm:items-center sm:px-6"
       id="authOverlay"
       aria-label="CloudBridge IQ sign in"
@@ -821,7 +844,7 @@
       </div>
     </section>
 
-    <script type="module" src="react/modern-ui.js?v=enterprise-ux-20260706"></script>
-  <script src="app.js?v=enterprise-ux-20260706" defer></script>
+    <script type="module" src="react/modern-ui.js?v=faq-help-20260706"></script>
+  <script src="app.js?v=faq-help-20260706" defer></script>
   </body>
 </html>

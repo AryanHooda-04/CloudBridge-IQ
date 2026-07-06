@@ -6,6 +6,7 @@ const dropZone = document.querySelector("#dropZone");
 const previewFrame = document.querySelector("#previewFrame");
 const demoSampleGrid = document.querySelector("#demoSampleGrid");
 const demoSampleSummary = document.querySelector("#demoSampleSummary");
+const intakeFaqSection = document.querySelector("#intakeFaqSection");
 const apiStatus = document.querySelector("#apiStatus");
 const resultTitle = document.querySelector("#resultTitle");
 const reportBreadcrumbs = document.querySelector("#reportBreadcrumbs");
@@ -86,6 +87,8 @@ const assessmentDashboard = document.querySelector("#assessmentDashboard");
 const assessmentCompareDialog = document.querySelector("#assessmentCompareDialog");
 const assessmentCompareContent = document.querySelector("#assessmentCompareContent");
 const assessmentCompareSubtitle = document.querySelector("#assessmentCompareSubtitle");
+const dashboardHelpDialog = document.querySelector("#dashboardHelpDialog");
+const dashboardHelpContent = document.querySelector("#dashboardHelpContent");
 const wizardBackButton = document.querySelector("#wizardBackButton");
 const wizardNextButton = document.querySelector("#wizardNextButton");
 const intakeStepPanels = Array.from(document.querySelectorAll("[data-intake-step]"));
@@ -97,6 +100,54 @@ const INTAKE_DRAFT_KEY = "cloudbridge.intakeDraft.v1";
 const LAST_REPORT_KEY = "cloudbridge.lastReport.v1";
 const DASHBOARD_FILTER_KEY = "cloudbridge.dashboardFilters.v1";
 const ASSESSMENT_TIMEOUT_MS = 120000;
+const DASHBOARD_FAQS = [
+  {
+    question: "What should I use CloudBridge IQ for day to day?",
+    answer:
+      "Use it as a migration intake and review workspace: capture a diagram, confirm the route and goals, generate an assessment, then review risks, mappings, and reports with architects.",
+  },
+  {
+    question: "Do I need a perfect architecture diagram?",
+    answer:
+      "No. A clear PNG or PDF with service labels is enough for a first pass. Low-confidence mappings are flagged so an architect can validate assumptions before approval.",
+  },
+  {
+    question: "When should I use Compare?",
+    answer:
+      "Use Compare when you have more than one assessment and want a portfolio-level delta: readiness movement, verdict changes, blockers, and what changed between two runs.",
+  },
+  {
+    question: "Where do reports and drafts live?",
+    answer:
+      "Completed assessments appear in Recent Runs. The dashboard keeps last opened report recovery, and the New Run workflow autosaves route, goals, and selected sample context while you work.",
+  },
+];
+const DAILY_HELP_STEPS = [
+  {
+    title: "Start from the Dashboard",
+    detail: "Check current status, recent runs, readiness trends, and any report you opened last.",
+  },
+  {
+    title: "Create or resume a New Run",
+    detail: "Pick a bundled sample for demos or upload a real diagram. The route, intent, goals, and pattern are saved while you work.",
+  },
+  {
+    title: "Confirm route and goals",
+    detail: "Set source and target cloud, choose the architecture pattern, and state the migration objective in plain business language.",
+  },
+  {
+    title: "Run the assessment",
+    detail: "CloudBridge IQ produces mappings, risks, readiness, target design, governance signals, and a review-ready report.",
+  },
+  {
+    title: "Review like an architect",
+    detail: "Open the report tabs, inspect low-confidence mappings, ask the migration agent focused questions, and capture reviewer notes.",
+  },
+  {
+    title: "Share and compare",
+    detail: "Use Compare for portfolio deltas, export PDF/Markdown/PNG for stakeholders, and return to All reports whenever you need history.",
+  },
+];
 const TAB_GROUPS = {
   architecture: ["source", "diagram", "plan"],
   "risk-cost": ["risks", "cost"],
@@ -177,6 +228,7 @@ syncProviderRouteBadges();
 syncAppFrame();
 renderHistory();
 renderAssessmentDashboard();
+renderIntakeFaqSection();
 setActiveIntakeStep(0);
 setViewMode(viewMode);
 syncReviewMetadataInputs();
@@ -195,6 +247,9 @@ window.addEventListener("resize", requestSnapshotCondensedSync);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && assessmentCompareDialog && !assessmentCompareDialog.hidden) {
     closeComparisonDrawer();
+  }
+  if (event.key === "Escape" && dashboardHelpDialog && !dashboardHelpDialog.hidden) {
+    closeDashboardHelp();
   }
 });
 
@@ -360,6 +415,16 @@ document.addEventListener("click", async (event) => {
     } else if (action === "last") {
       openLastReportFromDashboard();
     }
+    return;
+  }
+
+  if (event.target.closest("[data-help-open]")) {
+    openDashboardHelp();
+    return;
+  }
+
+  if (event.target.closest("[data-help-close]")) {
+    closeDashboardHelp();
     return;
   }
 
@@ -1543,6 +1608,7 @@ function renderAssessmentDashboard() {
       onShowAll: () => enterDashboardMode({ focusReports: true }),
       onFilterChange: updateDashboardFilter,
       onClearFilters: clearDashboardFilters,
+      onHowTo: openDashboardHelp,
       onSignOut: signOut,
       session: currentUser
         ? {
@@ -1762,6 +1828,106 @@ function renderDashboardFilterBar(allReports, visibleReports) {
         <span>of ${allReports.length} reports</span>
         <button type="button" class="diagram-link" data-dashboard-filter-clear>Reset</button>
       </div>
+    </section>
+  `;
+}
+
+function renderDashboardHelpSection() {
+  return `
+    <section class="dashboard-help-section">
+      <div class="dashboard-help-intro">
+        <div>
+          <p class="eyebrow">FAQ & daily workflow</p>
+          <h3>Use the agent like a migration review desk</h3>
+          <span>Start with intake, run the assessment, then use the report, compare, and agent views to support review meetings and follow-up actions.</span>
+        </div>
+      </div>
+      <div class="dashboard-faq-grid">
+        ${DASHBOARD_FAQS.map(
+          (item) => `
+            <article class="dashboard-faq-card">
+              <strong>${escapeHtml(item.question)}</strong>
+              <span>${escapeHtml(item.answer)}</span>
+            </article>
+          `,
+        ).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderIntakeFaqSection() {
+  if (!intakeFaqSection) {
+    return;
+  }
+  intakeFaqSection.innerHTML = renderDashboardHelpSection();
+}
+
+function openDashboardHelp() {
+  if (!dashboardHelpDialog || !dashboardHelpContent) {
+    return;
+  }
+  dashboardHelpContent.innerHTML = renderDashboardHelpDialogContent();
+  dashboardHelpDialog.hidden = false;
+  document.body.classList.add("help-open");
+  dashboardHelpDialog.querySelector("[data-help-close]")?.focus();
+}
+
+function closeDashboardHelp() {
+  if (!dashboardHelpDialog) {
+    return;
+  }
+  dashboardHelpDialog.hidden = true;
+  document.body.classList.remove("help-open");
+}
+
+function renderDashboardHelpDialogContent() {
+  return `
+    <section class="help-hero-card">
+      <p class="eyebrow">Day-to-day guide</p>
+      <h3>Run CloudBridge IQ as a repeatable cloud migration review loop.</h3>
+      <p>Use the app to turn diagrams into assessment evidence, keep review history searchable, and prepare stakeholder-ready migration summaries without hunting through local files.</p>
+    </section>
+    <section class="help-step-grid">
+      ${DAILY_HELP_STEPS.map(
+        (step, index) => `
+          <article class="help-step-card">
+            <span>${index + 1}</span>
+            <div>
+              <strong>${escapeHtml(step.title)}</strong>
+              <p>${escapeHtml(step.detail)}</p>
+            </div>
+          </article>
+        `,
+      ).join("")}
+    </section>
+    <section class="help-mode-grid">
+      <article>
+        <span>Daily intake</span>
+        <strong>Use samples for demos, uploads for real work.</strong>
+        <p>When a new opportunity arrives, upload the diagram, confirm route and goals, run the assessment, and save the report.</p>
+      </article>
+      <article>
+        <span>Architect review</span>
+        <strong>Focus on low confidence, blockers, and assumptions.</strong>
+        <p>Use the Agent tab for focused questions, the Gate tab for approval readiness, and notes for review evidence.</p>
+      </article>
+      <article>
+        <span>Portfolio update</span>
+        <strong>Search, filter, compare, and export.</strong>
+        <p>Use dashboard filters to find assessments by cloud or status, Compare for deltas, and PDF/Markdown exports for meetings.</p>
+      </article>
+    </section>
+    <section class="help-faq-list">
+      <h3>Common questions</h3>
+      ${DASHBOARD_FAQS.map(
+        (item) => `
+          <details>
+            <summary>${escapeHtml(item.question)}</summary>
+            <p>${escapeHtml(item.answer)}</p>
+          </details>
+        `,
+      ).join("")}
     </section>
   `;
 }
