@@ -52,6 +52,7 @@ const reviewPanel = document.querySelector("#reviewPanel");
 const toggleReviewRailButton = document.querySelector("#toggleReviewRailButton");
 const closeReviewRailButton = document.querySelector("#closeReviewRailButton");
 const toggleIntakeButton = document.querySelector("#toggleIntakeButton");
+const startNewRunButton = document.querySelector("#startNewRunButton");
 const collapseIntakeButton = document.querySelector("#collapseIntakeButton");
 const qualityGates = document.querySelector("#qualityGates");
 const projectNameInput = document.querySelector("#projectName");
@@ -280,6 +281,7 @@ toggleReviewRailButton?.addEventListener("click", () => {
 closeReviewRailButton?.addEventListener("click", () => setReviewRailCollapsed(true));
 
 toggleIntakeButton?.addEventListener("click", () => enterDashboardMode());
+startNewRunButton?.addEventListener("click", () => startNewRun());
 collapseIntakeButton?.addEventListener("click", () => toggleIntakePanel(true));
 
 authForm?.addEventListener("submit", async (event) => {
@@ -2536,6 +2538,12 @@ function applyRoleUi() {
   downloadPdfButton.disabled = !latestResult || !canView;
   downloadReportButton.disabled = !latestResult || !canView;
   downloadDiagramButton.disabled = !latestResult || !canView;
+  if (startNewRunButton) {
+    startNewRunButton.disabled = !canAssess;
+    startNewRunButton.title = canAssess
+      ? "Start a new assessment run"
+      : "Viewer access cannot start a new assessment run.";
+  }
   agentChatInput.disabled = !canView;
   agentChatSendButton.disabled = !canView || !latestResult;
 
@@ -2706,6 +2714,12 @@ function enterDashboardMode(options = {}) {
   if (options.focusReports) {
     scheduleIdleWork(() => assessmentDashboard?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
+  if (options.focusNewRun) {
+    scheduleIdleWork(() => {
+      document.querySelector(".control-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.querySelector("#demoSampleGrid")?.querySelector("button, [tabindex]")?.focus?.({ preventScroll: true });
+    });
+  }
   syncSnapshotCondensed();
 }
 
@@ -2719,6 +2733,139 @@ function enterAssessmentWorkspace(tabName = "overview") {
   activateTab(tabName);
   syncReportNavigation(latestResult);
   syncSnapshotCondensed();
+}
+
+function startNewRun() {
+  if (!hasPermission("can_assess")) {
+    showToast("Your role cannot start a new assessment run.", "error");
+    enterDashboardMode({ focusNewRun: true });
+    return;
+  }
+  resetIntakeForNewRun();
+  enterDashboardMode({ focusNewRun: true });
+  showToast("New run ready. Choose a sample or upload a diagram.", "success");
+}
+
+function resetIntakeForNewRun() {
+  window.clearTimeout(intakeDraftSaveTimer);
+  selectedDemoSampleId = "";
+  demoSampleRenderSignature = "";
+  runReadinessSignature = "";
+  if (fileInput) {
+    fileInput.value = "";
+  }
+  setFilePreview(null);
+  if (sourceProvider) {
+    sourceProvider.value = "auto";
+    sourceProvider.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (targetProvider) {
+    targetProvider.value = "aws";
+    targetProvider.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (goalsInput) {
+    goalsInput.value = "";
+  }
+  if (migrationIntent) {
+    migrationIntent.value = "";
+  }
+  setSelectValue(architectureVariant, "balanced");
+  setSelectValue(architecturePattern, "auto");
+  if (projectNameInput) {
+    projectNameInput.value = "";
+    reviewState.projectName = "";
+  }
+  renderDemoSampleCards();
+  renderDemoSampleSummary(null);
+  syncPresetStates();
+  syncProviderRouteBadges();
+  syncRunReadiness();
+  setActiveIntakeStep(0);
+  window.clearTimeout(intakeDraftSaveTimer);
+  clearIntakeDraft();
+}
+
+function buildAgentContextChips(payload = latestResult) {
+  if (!payload) {
+    return [
+      { label: "Context", value: "No assessment loaded" },
+      { label: "Next step", value: "Run assessment first" },
+    ];
+  }
+  const source = formatProvider(payload.source_architecture?.provider || sourceProvider?.value || "source");
+  const target = formatProvider(payload.target_architecture?.provider || targetProvider?.value || "target");
+  const readiness = payload.assessment_insights?.scores?.overall_readiness?.value;
+  const confidence = payload.final_verdict?.confidence;
+  const confidencePercent = Number(confidence) > 1 ? Number(confidence) : Number(confidence) * 100;
+  const mappings = Array.isArray(payload.service_mappings)
+    ? payload.service_mappings.length
+    : Array.isArray(payload.mappings)
+      ? payload.mappings.length
+      : 0;
+  const reviewFlags = buildQualityGateItems(payload).filter((gate) => ["block", "warn"].includes(gate.status)).length;
+  return [
+    { label: "Route", value: `${source} to ${target}` },
+    { label: "Readiness", value: Number.isFinite(Number(readiness)) ? `${Math.round(Number(readiness))}%` : "Not scored" },
+    { label: "Verdict", value: formatVerdict(payload.final_verdict?.recommendation || "Assessment") },
+    { label: "Mappings", value: mappings ? `${mappings} reviewed` : "Mapping context" },
+    {
+      label: "Confidence",
+      value: Number.isFinite(confidencePercent) ? `${Math.round(confidencePercent)}%` : "Evidence based",
+    },
+    { label: "Review flags", value: reviewFlags ? `${reviewFlags} need attention` : "No critical flags" },
+  ];
+}
+
+function renderAgentContextChips(chips = []) {
+  if (!chips.length) {
+    return "";
+  }
+  return `
+    <div class="agent-answer-context" aria-label="Answer context">
+      ${chips
+        .map(
+          (chip) => `
+            <span>
+              <small>${escapeHtml(chip.label)}</small>
+              <strong>${escapeHtml(chip.value)}</strong>
+            </span>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderAgentSourceRow(
+  label = "Assessment-aware answer",
+  detail = "Grounded in current report, active tab, reviewer notes, and target architecture context.",
+) {
+  return `
+    <div class="agent-source-row">
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(detail)}</small>
+    </div>
+  `;
+}
+
+function renderAgentFollowUps(suggestions = []) {
+  const usable = suggestions.filter(Boolean).slice(0, 3);
+  if (!usable.length) {
+    return "";
+  }
+  return `
+    <div class="agent-followups" aria-label="Suggested follow-up questions">
+      <span>Suggested follow-ups</span>
+      <div>
+        ${usable
+          .map(
+            (suggestion) =>
+              `<button type="button" data-agent-prompt="${escapeAttribute(suggestion)}">${escapeHtml(shortSuggestion(suggestion))}</button>`,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function resetAgentChat(payload = latestResult) {
@@ -2742,11 +2889,18 @@ function resetAgentChat(payload = latestResult) {
     : "";
   agentStatus.textContent = payload ? "Assessment loaded" : "No assessment";
   agentChatLog.innerHTML = `
-    <div class="agent-message assistant">
+    <div class="agent-message assistant agent-message-premium">
       <div class="agent-message-meta">
         <span class="agent-message-avatar">CB</span>
         <strong>Migration Agent</strong>
       </div>
+      ${renderAgentSourceRow(
+        payload ? "Assessment context loaded" : "Ready for assessment context",
+        payload
+          ? "Current report, active tab, reviewer notes, and target architecture context are available."
+          : "Run an assessment first; then the agent will use mappings, risks, and report context.",
+      )}
+      ${renderAgentContextChips(buildAgentContextChips(payload))}
       <div class="agent-message-body">
         <p>${
           payload
@@ -2796,7 +2950,11 @@ async function askMigrationAgent() {
     }
     stopAgentPhases();
     thinkingMessage?.remove();
-    appendAgentMessage("assistant", payload.answer || "I could not generate an answer.");
+    appendAgentMessage("assistant", payload.answer || "I could not generate an answer.", {
+      contextChips: buildAgentContextChips(latestResult),
+      sourceLabel: "LLM generated answer",
+      suggestions: payload.suggested_questions || [],
+    });
     agentChatHistory.push({ role: "assistant", content: payload.answer || "" });
     agentChatHistory = agentChatHistory.slice(-12);
     renderAgentSuggestionButtons(payload.suggested_questions || []);
@@ -2805,7 +2963,16 @@ async function askMigrationAgent() {
     stopAgentPhases();
     thinkingMessage?.remove();
     const fallbackAnswer = buildLocalAgentFallback(question, error);
-    appendAgentMessage("assistant", fallbackAnswer, { fallback: true });
+    appendAgentMessage("assistant", fallbackAnswer, {
+      fallback: true,
+      contextChips: buildAgentContextChips(latestResult),
+      sourceLabel: "Local assessment fallback",
+      suggestions: [
+        "Explain the target architecture flow.",
+        "Which mappings need architect review?",
+        "What are the top migration risks?",
+      ],
+    });
     agentChatHistory.push({ role: "assistant", content: fallbackAnswer });
     agentChatHistory = agentChatHistory.slice(-12);
     renderAgentSuggestionButtons([
@@ -2825,18 +2992,24 @@ function appendAgentMessage(role, content, options = {}) {
     return null;
   }
   const message = document.createElement("div");
-  message.className = `agent-message ${role}${options.transient ? " transient" : ""}`;
+  const isPremiumAssistant = role === "assistant" && !options.transient && (options.contextChips || options.suggestions || options.sourceLabel);
+  message.className = `agent-message ${role}${options.transient ? " transient" : ""}${isPremiumAssistant ? " agent-message-premium" : ""}`;
   const label = role === "user" ? "You" : "Migration Agent";
+  const messageBody = options.html
+    ? content || ""
+    : role === "assistant" ? renderMarkdown(content || "") : `<p>${escapeHtml(content || "")}</p>`;
+  const sourceDetail = latestResult
+    ? undefined
+    : "No assessment is loaded yet; run an assessment to unlock report-specific grounding.";
   message.innerHTML = `
     <div class="agent-message-meta">
       <span class="agent-message-avatar">${role === "user" ? "You" : "CB"}</span>
       <strong>${label}</strong>
     </div>
-    <div class="agent-message-body ${options.fallback ? "agent-fallback-body" : ""}">${
-      options.html
-        ? content || ""
-        : role === "assistant" ? renderMarkdown(content || "") : `<p>${escapeHtml(content || "")}</p>`
-    }</div>
+    ${isPremiumAssistant ? renderAgentSourceRow(options.sourceLabel || "Assessment-aware answer", sourceDetail) : ""}
+    ${isPremiumAssistant ? renderAgentContextChips(options.contextChips || buildAgentContextChips(latestResult)) : ""}
+    <div class="agent-message-body ${options.fallback ? "agent-fallback-body" : ""}">${messageBody}</div>
+    ${isPremiumAssistant ? renderAgentFollowUps(options.suggestions || []) : ""}
   `;
   agentChatLog.appendChild(message);
   agentChatLog.scrollTop = agentChatLog.scrollHeight;
