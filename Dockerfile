@@ -22,6 +22,7 @@ RUN python -m pip install --upgrade pip \
     && pip install -r requirements.txt
 
 COPY app ./app
+COPY samples/architecture_diagrams ./samples/architecture_diagrams
 
 EXPOSE 10000
 

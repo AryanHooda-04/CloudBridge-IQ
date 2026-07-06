@@ -15,7 +15,9 @@ uvicorn*.log
 *.log
 
 tests/
-samples/
+samples/*
+!samples/architecture_diagrams/
+!samples/architecture_diagrams/**
 
 .DS_Store
 Thumbs.db
