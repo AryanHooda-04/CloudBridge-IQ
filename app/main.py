@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.agents.migration_graph import run_migration_assessment
@@ -19,6 +20,8 @@ from app.config import get_settings
 from app.schemas import (
     AnalyzeMigrationJsonRequest,
     AnalyzeMigrationResponse,
+    AssessmentComparisonRequest,
+    AssessmentComparisonResponse,
     AssessmentRecord,
     AssessmentSummary,
     AuditEventRecord,
@@ -28,6 +31,7 @@ from app.schemas import (
     CostModelInput,
     CostModelResponse,
     DiagramImageRequest,
+    DemoSampleMetadata,
     EvidenceCreateRequest,
     EvidenceRecord,
     MigrationAssessmentReport,
@@ -51,6 +55,7 @@ from app.services.auth import (
     user_from_session_token,
 )
 from app.services.architecture_generator import generate_target_architecture
+from app.services.assessment_comparison import generate_assessment_comparison
 from app.services.assessment_insights import build_assessment_insights
 from app.services.aws_diagram_generator import generate_aws_diagram_png
 from app.services.cloud_mapping import map_services
@@ -82,6 +87,8 @@ from app.services.report_generator import build_report
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+SAMPLE_DIAGRAM_DIR = BASE_DIR.parent / "samples" / "architecture_diagrams"
+SAMPLE_METADATA_FILE = SAMPLE_DIAGRAM_DIR / "metadata.json"
 
 
 @asynccontextmanager
@@ -189,6 +196,22 @@ async def create_session_or_command(
         _ensure_permission(user, "can_view")
         payload = MigrationAgentChatRequest.model_validate(request)
         return await _agent_chat_response(payload)
+    if action in {"compare_assessments", "assessment_compare"}:
+        user = _user_from_optional_session(session_token)
+        _ensure_permission(user, "can_view")
+        payload = AssessmentComparisonRequest.model_validate(request)
+        result = await _assessment_compare_response(payload)
+        write_audit_event(
+            user=user,
+            action="assessment.compared",
+            details={
+                "baseline_title": payload.baseline.title,
+                "current_title": payload.current.title,
+                "source": result.source,
+                "readiness_delta": result.readiness_delta,
+            },
+        )
+        return result
     if action in {"save_assessment", "persist_assessment"}:
         user = _user_from_optional_session(session_token)
         _ensure_permission(user, "can_review")
@@ -285,6 +308,22 @@ async def sso_readiness() -> SsoReadinessResponse:
             "Map group or email claims to CloudBridge IQ roles.",
             "Keep local signed-cookie auth enabled as a break-glass fallback until SSO is verified.",
         ],
+    )
+
+
+@app.get("/api/demo-samples", response_model=list[DemoSampleMetadata])
+async def demo_samples() -> list[DemoSampleMetadata]:
+    return _load_demo_samples()
+
+
+@app.get("/api/demo-samples/{sample_id}/image")
+async def demo_sample_image(sample_id: str) -> FileResponse:
+    sample = _demo_sample_by_id(sample_id)
+    image_path = _demo_sample_image_path(sample)
+    return FileResponse(
+        image_path,
+        media_type="image/png",
+        filename=sample.filename,
     )
 
 
@@ -438,6 +477,46 @@ def _ensure_permission(user: AuthUser, permission: str) -> None:
             status_code=403,
             detail="You do not have permission to perform this action.",
         )
+
+
+def _load_demo_samples() -> list[DemoSampleMetadata]:
+    try:
+        raw_samples = json.loads(SAMPLE_METADATA_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Demo sample metadata was not found.") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Demo sample metadata is invalid JSON.") from exc
+
+    if not isinstance(raw_samples, list):
+        raise HTTPException(status_code=500, detail="Demo sample metadata must be a list.")
+
+    samples: list[DemoSampleMetadata] = []
+    for raw_sample in raw_samples:
+        sample = DemoSampleMetadata.model_validate(raw_sample)
+        image_path = _demo_sample_image_path(sample)
+        samples.append(
+            sample.model_copy(
+                update={"image_url": f"/api/demo-samples/{sample.id}/image"},
+            ),
+        )
+        if not image_path.is_file():
+            raise HTTPException(status_code=500, detail=f"Demo sample image is missing: {sample.filename}")
+    return samples
+
+
+def _demo_sample_by_id(sample_id: str) -> DemoSampleMetadata:
+    for sample in _load_demo_samples():
+        if sample.id == sample_id:
+            return sample
+    raise HTTPException(status_code=404, detail="Demo sample was not found.")
+
+
+def _demo_sample_image_path(sample: DemoSampleMetadata) -> Path:
+    image_path = (SAMPLE_DIAGRAM_DIR / sample.filename).resolve()
+    sample_dir = SAMPLE_DIAGRAM_DIR.resolve()
+    if sample_dir not in image_path.parents or image_path.suffix.lower() != ".png":
+        raise HTTPException(status_code=400, detail="Demo sample filename is invalid.")
+    return image_path
 
 
 async def _run_assessment_from_upload(
@@ -621,6 +700,37 @@ async def _agent_chat_response(request: MigrationAgentChatRequest) -> MigrationA
         raise HTTPException(
             status_code=500,
             detail=f"Migration agent chat failed: {exc}",
+        ) from exc
+
+
+@app.post("/api/assessments/compare", response_model=AssessmentComparisonResponse)
+async def compare_assessments(
+    request: AssessmentComparisonRequest,
+    user: AuthUser = Depends(require_permission("can_view")),
+) -> AssessmentComparisonResponse:
+    result = await _assessment_compare_response(request)
+    write_audit_event(
+        user=user,
+        action="assessment.compared",
+        details={
+            "baseline_title": request.baseline.title,
+            "current_title": request.current.title,
+            "source": result.source,
+            "readiness_delta": result.readiness_delta,
+        },
+    )
+    return result
+
+
+async def _assessment_compare_response(
+    request: AssessmentComparisonRequest,
+) -> AssessmentComparisonResponse:
+    try:
+        return await generate_assessment_comparison(request)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Assessment comparison failed: {exc}",
         ) from exc
 
 

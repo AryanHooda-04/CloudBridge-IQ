@@ -49,9 +49,9 @@ SSL_OPENAI=insecure
 POPPLER_PATH=C:\Tools\poppler\poppler-26.02.0\Library\bin
 GRAPHVIZ_DOT=C:\Tools\Graphviz-15.0.0-win64\bin\dot.exe
 AUTH_SECRET_KEY=replace_with_a_random_session_secret
-AUTH_ADMIN_IDENTITIES=aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04
-AUTH_ARCHITECT_IDENTITIES=aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04
-AUTH_ADMIN_PASSWORD=
+AUTH_ADMIN_IDENTITIES=admin
+AUTH_ARCHITECT_IDENTITIES=admin
+AUTH_ADMIN_PASSWORD=admin
 AUTH_DEFAULT_ROLE=reviewer
 AUTH_SESSION_HOURS=8
 ```
@@ -60,7 +60,7 @@ AUTH_SESSION_HOURS=8
 
 Without an API key, the application still runs and uses deterministic fallback detection for local development, but image-only diagrams will have low-confidence results.
 
-`AUTH_ADMIN_IDENTITIES` and `AUTH_ARCHITECT_IDENTITIES` control who receives elevated access. By default, Aryan identities are assigned admin and architect capabilities. Other signed-in users are constrained to reviewer or viewer access.
+`AUTH_ADMIN_IDENTITIES` and `AUTH_ARCHITECT_IDENTITIES` control who receives elevated access. By default, the demo administrator is `admin` with password `admin`; other signed-in users are constrained to reviewer or viewer access.
 
 ## Run
 
@@ -110,7 +110,9 @@ OPENAI_API_KEY=your_openai_api_key
 MODEL_NAME=gpt-4.1
 VISION_MODEL_NAME=gpt-4.1
 SSL_OPENAI=insecure
-AUTH_ADMIN_PASSWORD=your_admin_password
+AUTH_ADMIN_IDENTITIES=admin
+AUTH_ARCHITECT_IDENTITIES=admin
+AUTH_ADMIN_PASSWORD=admin
 AUTH_SECRET_KEY=generate_a_long_random_value
 AUTH_DEFAULT_ROLE=reviewer
 AUTH_SESSION_HOURS=8
@@ -151,14 +153,17 @@ Then open `http://127.0.0.1:10000`.
 
 ## Web UI
 
-The app includes a local UI for testing and using the migration agent:
+The app includes a modern local SaaS-style UI for testing and using the migration agent:
 
-- Upload an image or PDF architecture diagram.
-- Sign in with local RBAC. Aryan receives admin and architect access; other users enter as reviewer or viewer.
-- Set source and target providers.
-- Add migration intent and comma-separated goals.
-- Run the assessment against `POST /analyze-migration`.
-- Review the generated report, architecture diagram, service mappings, risks, costs, and decision gate.
+- Sign in with local RBAC. The demo account `admin` / `admin` receives admin and architect access; other users enter as reviewer or viewer.
+- Land on a dashboard-first experience with current assessment status, previous runs, portfolio metrics, sign out, and a New Run section.
+- Pick a bundled sample diagram card or upload an image/PDF architecture diagram.
+- Let sample metadata auto-fill the recommended source provider, target provider, migration intent, goals, architecture variant, and architecture pattern.
+- Confirm route, goals, and Review & Run summary before launching the assessment.
+- Run the assessment against `POST /analyze-migration` or the `/api/session` assessment action.
+- Open a report to reveal the assessment workspace tabs and compact actions for Dashboard, Exec, Arch, Save, Copy, PDF, MD, and PNG.
+- Review the generated report, architecture diagram, service mappings, risks, costs, decision gate, and assessment-grounded agent.
+- Compare two assessments with an LLM-backed portfolio comparison and deterministic local fallback.
 - Copy the report or download PDF, Markdown, and rendered target diagram PNG output.
 
 ## Auth And RBAC
@@ -213,7 +218,7 @@ Authenticate first when calling protected APIs directly:
 curl -X POST "http://127.0.0.1:8000/auth/login" \
   -H "Content-Type: application/json" \
   -c cookies.txt \
-  -d "{\"display_name\":\"Aryan\",\"email\":\"aryan.a\",\"requested_role\":\"reviewer\"}"
+  -d "{\"display_name\":\"admin\",\"email\":\"admin@example.com\",\"requested_role\":\"reviewer\",\"admin_password\":\"admin\"}"
 ```
 
 Example response shape:

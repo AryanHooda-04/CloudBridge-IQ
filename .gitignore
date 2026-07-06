@@ -5,6 +5,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest-tmp/
 .mypy_cache/
 .ruff_cache/
 
@@ -16,6 +17,7 @@ data/*.sqlite3-*
 .venv/
 venv/
 env/
+node_modules/
 
 *.pdf
 *.png
@@ -24,6 +26,7 @@ env/
 *.webp
 *.gif
 *.bmp
+!samples/architecture_diagrams/*.png
 
 .DS_Store
 Thumbs.db

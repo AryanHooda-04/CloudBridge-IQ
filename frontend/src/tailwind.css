@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .cb-card {
+    @apply rounded-lg border border-slate-200 bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.055)] transition duration-200;
+  }
+
+  .cb-card-hover {
+    @apply hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-[0_16px_34px_rgba(2,132,199,0.13)];
+  }
+
+  .cb-line-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+.cb-card .bg-sky-600 {
+  width: 0.625rem !important;
+  height: 0.625rem !important;
+  border-radius: 9999px !important;
+  background: #10b981 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.16) !important;
+}

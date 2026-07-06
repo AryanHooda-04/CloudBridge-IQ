@@ -28,6 +28,11 @@ Rules:
 - Use short Markdown bullets for multi-part answers.
 """
 
+CHAT_CONTEXT_CHAR_LIMIT = 10000
+CHAT_REPORT_EXCERPT_CHAR_LIMIT = 2400
+CHAT_CLIENT_TIMEOUT_SECONDS = 90
+CHAT_MAX_TOKENS = 1400
+
 
 async def answer_migration_question(
     request: MigrationAgentChatRequest,
@@ -46,7 +51,13 @@ async def answer_migration_question(
             model_used="offline",
         )
 
-    llm = build_chat_openai(model=settings.model_name, temperature=0.2)
+    llm = build_chat_openai(
+        model=settings.model_name,
+        temperature=0.2,
+        timeout=CHAT_CLIENT_TIMEOUT_SECONDS,
+        max_retries=0,
+        max_tokens=CHAT_MAX_TOKENS,
+    )
     history_text = _history_text(request.chat_history)
     reviewer_notes = (request.reviewer_notes or "").strip()
     active_tab = (request.active_tab or "overview").strip()
@@ -83,7 +94,7 @@ User question:
             model_used=f"{settings.model_name} unavailable: {exc.__class__.__name__}",
         )
 
-    answer = getattr(response, "content", str(response)).strip()
+    answer = _coerce_answer_text(getattr(response, "content", response))
     return MigrationAgentChatResponse(
         answer=answer or _offline_answer(request.question, request.assessment),
         suggested_questions=_suggested_questions(request.assessment),
@@ -171,9 +182,9 @@ def _assessment_context(assessment: AnalyzeMigrationResponse | None) -> str:
         "final_verdict": assessment.final_verdict.model_dump(mode="json"),
         "assessment_insights": assessment.assessment_insights,
         "analysis_metadata": assessment.analysis_metadata,
-        "report_excerpt": _truncate(assessment.markdown_report, 7000),
+        "report_excerpt": _truncate(assessment.markdown_report, CHAT_REPORT_EXCERPT_CHAR_LIMIT),
     }
-    return _truncate(json.dumps(data, indent=2), 18000)
+    return _truncate(json.dumps(data, indent=2), CHAT_CONTEXT_CHAR_LIMIT)
 
 
 def _history_text(history: list) -> str:
@@ -241,3 +252,20 @@ def _truncate(value: str | None, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 40].rstrip() + "\n...[truncated for chat context]"
+
+
+def _coerce_answer_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content["text"].strip()
+        if isinstance(content.get("content"), str):
+            return content["content"].strip()
+        return json.dumps(content, ensure_ascii=False)
+    if isinstance(content, list):
+        parts = [_coerce_answer_text(item) for item in content]
+        return "\n".join(part for part in parts if part).strip()
+    return str(content or "").strip()

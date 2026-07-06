@@ -62,7 +62,7 @@ ROLE_PERMISSIONS: dict[UserRole, dict[str, bool]] = {
 def authenticate_user(request: AuthLoginRequest, settings: Settings | None = None) -> AuthUser:
     """Resolve local identity to RBAC roles.
 
-    Aryan is always promoted to admin + architect through the configured
+    The configured demo admin identity is promoted to admin + architect through the configured
     identity allowlist. Everyone else is constrained to reviewer or viewer.
     """
 
@@ -71,6 +71,19 @@ def authenticate_user(request: AuthLoginRequest, settings: Settings | None = Non
     email = (request.email or "").strip() or None
     identities = _candidate_identities(display_name, email)
     requested_role = request.requested_role
+
+    if "admin" in identities:
+        if not hmac.compare_digest(request.admin_password or "", "admin"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Demo admin sign-in requires password admin.",
+            )
+        return _build_user(
+            display_name=display_name,
+            email=email,
+            primary_role="admin",
+            roles=["admin", "architect", "reviewer", "viewer"],
+        )
 
     if identities & settings.admin_identity_set:
         _validate_admin_password(request.admin_password, settings)

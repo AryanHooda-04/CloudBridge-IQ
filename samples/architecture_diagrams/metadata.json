@@ -1,0 +1,67 @@
+[
+  {
+    "id": "azure-enterprise-webapp",
+    "filename": "01-azure-enterprise-webapp.png",
+    "title": "Azure Enterprise Web App",
+    "source_provider": "azure",
+    "target_provider": "aws",
+    "route_label": "Azure to AWS",
+    "architecture_pattern": "web-application",
+    "architecture_variant": "managed-modernization",
+    "pattern_label": "Web application modernization",
+    "migration_intent": "We are migrating this Azure web application to AWS.",
+    "goals": ["modernization", "reduce operations", "improve availability"]
+  },
+  {
+    "id": "gcp-iot-data-platform",
+    "filename": "02-gcp-iot-data-platform.png",
+    "title": "GCP IoT Data Platform",
+    "source_provider": "gcp",
+    "target_provider": "azure",
+    "route_label": "GCP to Azure",
+    "architecture_pattern": "iot-data-platform",
+    "architecture_variant": "data-platform",
+    "pattern_label": "IoT data platform",
+    "migration_intent": "We are migrating this GCP IoT data platform to Azure.",
+    "goals": ["analytics modernization", "improve scalability", "reduce operations"]
+  },
+  {
+    "id": "aws-neo4j-graphrag",
+    "filename": "03-aws-neo4j-graphrag.png",
+    "title": "AWS Neo4j GraphRAG",
+    "source_provider": "aws",
+    "target_provider": "azure",
+    "route_label": "AWS to Azure",
+    "architecture_pattern": "graphrag",
+    "architecture_variant": "managed-modernization",
+    "pattern_label": "GraphRAG / knowledge graph",
+    "migration_intent": "We are migrating this AWS Neo4j GraphRAG workload to Azure.",
+    "goals": ["AI modernization", "preserve graph database capabilities", "improve governance"]
+  },
+  {
+    "id": "azure-hybrid-connectivity",
+    "filename": "04-azure-hybrid-connectivity.png",
+    "title": "Azure Hybrid Connectivity",
+    "source_provider": "azure",
+    "target_provider": "aws",
+    "route_label": "Azure to AWS",
+    "architecture_pattern": "hybrid-connectivity",
+    "architecture_variant": "lift-and-shift",
+    "pattern_label": "Hybrid connectivity",
+    "migration_intent": "We are migrating Azure ExpressRoute and VPN connectivity to AWS.",
+    "goals": ["improve DR", "network resiliency", "data center exit"]
+  },
+  {
+    "id": "aws-event-microservices",
+    "filename": "05-aws-event-microservices.png",
+    "title": "AWS Event-Driven Microservices",
+    "source_provider": "aws",
+    "target_provider": "azure",
+    "route_label": "AWS to Azure",
+    "architecture_pattern": "microservices",
+    "architecture_variant": "serverless-event-driven",
+    "pattern_label": "Event-driven microservices",
+    "migration_intent": "We are migrating this AWS event-driven microservices architecture to Azure.",
+    "goals": ["modernization", "event-driven redesign", "operational consistency"]
+  }
+]

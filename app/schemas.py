@@ -153,6 +153,21 @@ class DiagramImageRequest(BaseModel):
     filename: str = "aws-architecture.png"
 
 
+class DemoSampleMetadata(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    filename: str = Field(min_length=1, max_length=240)
+    title: str = Field(min_length=1, max_length=160)
+    source_provider: Literal["aws", "azure", "gcp"]
+    target_provider: Literal["aws", "azure", "gcp"]
+    route_label: str = Field(min_length=1, max_length=80)
+    architecture_pattern: str = Field(min_length=1, max_length=120)
+    architecture_variant: str = Field(default="balanced", max_length=120)
+    pattern_label: str = Field(min_length=1, max_length=160)
+    migration_intent: str = Field(min_length=1, max_length=500)
+    goals: list[str] = []
+    image_url: str | None = None
+
+
 class MigrationChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
@@ -171,6 +186,50 @@ class MigrationAgentChatResponse(BaseModel):
     suggested_questions: list[str] = []
     used_assessment_context: bool = False
     model_used: str | None = None
+
+
+class AssessmentComparisonItem(BaseModel):
+    title: str = Field(default="Migration assessment", min_length=1, max_length=240)
+    status: str | None = Field(default=None, max_length=120)
+    reviewer: str | None = Field(default=None, max_length=160)
+    updated_at: str | None = Field(default=None, max_length=80)
+    assessment: AnalyzeMigrationResponse
+    metadata: dict[str, Any] = {}
+
+
+class AssessmentComparisonRequest(BaseModel):
+    baseline: AssessmentComparisonItem
+    current: AssessmentComparisonItem
+    focus: str | None = Field(default=None, max_length=500)
+
+
+class AssessmentComparisonDelta(BaseModel):
+    area: str = Field(min_length=1, max_length=120)
+    baseline: str = Field(min_length=1, max_length=500)
+    current: str = Field(min_length=1, max_length=500)
+    impact: str = Field(min_length=1, max_length=700)
+    priority: Literal["low", "medium", "high", "critical"] = "medium"
+    owner: str = Field(default="Architecture review board", max_length=160)
+
+
+class AssessmentComparisonResponse(BaseModel):
+    executive_summary: str
+    decision: str
+    model_used: str | None = None
+    generated_at: str
+    source: Literal["llm", "offline", "llm_fallback"] = "offline"
+    comparison_confidence: float = Field(default=0.7, ge=0, le=1)
+    baseline_readiness: int = Field(default=0, ge=0, le=100)
+    current_readiness: int = Field(default=0, ge=0, le=100)
+    readiness_delta: int = Field(default=0, ge=-100, le=100)
+    verdict_delta: str
+    business_impact: list[str] = []
+    architecture_deltas: list[AssessmentComparisonDelta] = []
+    mapping_deltas: list[AssessmentComparisonDelta] = []
+    risk_deltas: list[AssessmentComparisonDelta] = []
+    governance_actions: list[str] = []
+    recommended_next_steps: list[str] = []
+    assumptions: list[str] = []
 
 
 class PersistAssessmentRequest(BaseModel):

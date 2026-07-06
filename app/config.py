@@ -21,13 +21,9 @@ class Settings(BaseModel):
     graphviz_dot: str | None = Field(default=None)
     max_upload_bytes: int = Field(default=15 * 1024 * 1024)
     auth_secret_key: str = Field(default="cloudbridge-local-dev-secret-change-me")
-    auth_admin_identities: str = Field(
-        default="aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04",
-    )
-    auth_architect_identities: str = Field(
-        default="aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04",
-    )
-    auth_admin_password: str | None = Field(default=None)
+    auth_admin_identities: str = Field(default="admin")
+    auth_architect_identities: str = Field(default="admin")
+    auth_admin_password: str | None = Field(default="admin")
     auth_default_role: str = Field(default="reviewer")
     auth_session_hours: int = Field(default=8)
     database_path: str = Field(default="data/cloudbridge_iq.sqlite3")
@@ -71,13 +67,13 @@ def get_settings() -> Settings:
         auth_secret_key=os.getenv("AUTH_SECRET_KEY", "cloudbridge-local-dev-secret-change-me"),
         auth_admin_identities=os.getenv(
             "AUTH_ADMIN_IDENTITIES",
-            "aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04",
+            "admin",
         ),
         auth_architect_identities=os.getenv(
             "AUTH_ARCHITECT_IDENTITIES",
-            "aryan,aryan.a,aryan hooda,aryanhooda-04,aryanhooda04",
+            "admin",
         ),
-        auth_admin_password=os.getenv("AUTH_ADMIN_PASSWORD") or None,
+        auth_admin_password=os.getenv("AUTH_ADMIN_PASSWORD", "admin") or None,
         auth_default_role=os.getenv("AUTH_DEFAULT_ROLE", "reviewer"),
         auth_session_hours=int(os.getenv("AUTH_SESSION_HOURS", "8")),
         database_path=os.getenv("DATABASE_PATH", "data/cloudbridge_iq.sqlite3"),

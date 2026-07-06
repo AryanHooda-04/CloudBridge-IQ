@@ -8,15 +8,16 @@ from app.schemas import AuthLoginRequest
 from app.services.auth import authenticate_user, create_session_token, user_from_session_token
 
 
-def test_aryan_gets_admin_and_architect_roles():
+def test_admin_gets_admin_and_architect_roles():
     settings = Settings(
         auth_secret_key="test-secret",
-        auth_admin_identities="aryan,aryan.a",
-        auth_architect_identities="aryan,aryan.a",
+        auth_admin_identities="admin",
+        auth_architect_identities="admin",
+        auth_admin_password="admin",
     )
 
     user = authenticate_user(
-        AuthLoginRequest(display_name="Aryan", requested_role="viewer"),
+        AuthLoginRequest(display_name="admin", requested_role="viewer", admin_password="admin"),
         settings=settings,
     )
 
@@ -26,7 +27,7 @@ def test_aryan_gets_admin_and_architect_roles():
     assert user.permissions["can_approve"] is True
 
 
-def test_non_aryan_reviewer_cannot_approve():
+def test_non_admin_reviewer_cannot_approve():
     settings = Settings(auth_secret_key="test-secret")
 
     user = authenticate_user(
@@ -38,6 +39,29 @@ def test_non_aryan_reviewer_cannot_approve():
     assert user.permissions["can_assess"] is True
     assert user.permissions["can_review"] is True
     assert user.permissions["can_approve"] is False
+
+
+def test_demo_admin_requires_admin_password():
+    settings = Settings(
+        auth_secret_key="test-secret",
+        auth_admin_identities="aryan",
+        auth_architect_identities="aryan",
+        auth_admin_password="old-render-password",
+    )
+
+    with pytest.raises(HTTPException):
+        authenticate_user(
+            AuthLoginRequest(display_name="admin", requested_role="reviewer", admin_password="wrong"),
+            settings=settings,
+        )
+
+    user = authenticate_user(
+        AuthLoginRequest(display_name="admin", requested_role="reviewer", admin_password="admin"),
+        settings=settings,
+    )
+
+    assert user.primary_role == "admin"
+    assert user.permissions["can_admin"] is True
 
 
 def test_viewer_is_read_only():
@@ -55,16 +79,21 @@ def test_viewer_is_read_only():
 
 
 def test_session_token_round_trip():
-    settings = Settings(auth_secret_key="test-secret")
+    settings = Settings(
+        auth_secret_key="test-secret",
+        auth_admin_identities="admin",
+        auth_architect_identities="admin",
+        auth_admin_password="admin",
+    )
     user = authenticate_user(
-        AuthLoginRequest(display_name="Aryan", email="aryan.a@example.com"),
+        AuthLoginRequest(display_name="admin", email="admin@example.com", admin_password="admin"),
         settings=settings,
     )
 
     token = create_session_token(user, settings=settings)
     restored = user_from_session_token(token, settings=settings)
 
-    assert restored.display_name == "Aryan"
+    assert restored.display_name == "admin"
     assert restored.primary_role == "admin"
     assert restored.permissions["can_architect_review"] is True
 

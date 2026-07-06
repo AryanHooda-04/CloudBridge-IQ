@@ -15,9 +15,13 @@ services:
         value: reviewer
       - key: AUTH_SESSION_HOURS
         value: "8"
+      - key: AUTH_ADMIN_IDENTITIES
+        value: admin
+      - key: AUTH_ARCHITECT_IDENTITIES
+        value: admin
+      - key: AUTH_ADMIN_PASSWORD
+        value: admin
       - key: OPENAI_API_KEY
         sync: false
       - key: AUTH_SECRET_KEY
         generateValue: true
-      - key: AUTH_ADMIN_PASSWORD
-        sync: false

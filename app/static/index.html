@@ -5,9 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CloudBridge IQ</title>
     <link rel="icon" type="image/svg+xml" href="assets/cloudbridge-iq-favicon.svg" />
-    <link rel="stylesheet" href="styles.css?v=pdf-export-20260601" />
+    <script>
+      try {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("cloudbridge.auth.theme", "light");
+      } catch {
+        document.documentElement.classList.remove("dark");
+      }
+    </script>
+    <link rel="stylesheet" href="react/modern-ui.css?v=dashboard-saas-20260604" />
+    <link rel="stylesheet" href="styles.css?v=dashboard-saas-20260605-pan-preview" />
   </head>
-  <body>
+  <body class="dashboard-mode">
     <div class="app-shell">
       <aside class="app-sidebar" aria-label="Primary navigation">
         <div class="sidebar-brand">
@@ -19,13 +28,10 @@
         </div>
         <nav class="sidebar-nav" aria-label="Assessment workspace">
           <button type="button" class="active" data-navigate-tab="overview"><span>OV</span>Overview</button>
-          <button type="button" data-navigate-tab="source"><span>SA</span>Source</button>
+          <button type="button" data-navigate-tab="architecture"><span>AR</span>Architecture</button>
           <button type="button" data-navigate-tab="mapping"><span>MP</span>Mapping</button>
-          <button type="button" data-navigate-tab="diagram"><span>AR</span>Architecture</button>
-          <button type="button" data-navigate-tab="plan"><span>PL</span>Plan</button>
-          <button type="button" data-navigate-tab="risks"><span>RK</span>Risk</button>
-          <button type="button" data-navigate-tab="cost"><span>CO</span>Cost</button>
-          <button type="button" data-navigate-tab="agent"><span>AI</span>Agent</button>
+          <button type="button" data-navigate-tab="risk-cost"><span>RC</span>Risk & Cost</button>
+          <button type="button" data-navigate-tab="review"><span>RV</span>Review</button>
           <button type="button" data-navigate-tab="report"><span>RP</span>Report</button>
         </nav>
         <div class="sidebar-footer sidebar-session">
@@ -45,7 +51,7 @@
           <div class="brand-lockup" aria-label="CloudBridge IQ">
             <img class="brand-mark" src="assets/cloudbridge-iq-mark.svg" alt="" />
             <div class="brand-copy">
-              <p class="eyebrow">AI Cloud Migration Assessment</p>
+              <p class="eyebrow">Migration Studio</p>
               <h1>CloudBridge IQ</h1>
             </div>
           </div>
@@ -79,142 +85,216 @@
             <div class="intake-header-top">
               <div>
                 <p class="eyebrow">Guided Intake</p>
-                <h2>New Assessment</h2>
+                <h2>New Run</h2>
               </div>
               <button type="button" class="panel-toggle-button" id="collapseIntakeButton">Hide</button>
             </div>
-            <p>Upload a diagram, confirm the route, select goals, then run the migration assessment.</p>
+            <p>Pick a sample or upload a diagram.</p>
             <div class="migration-visual-card" aria-hidden="true">
               <img src="assets/migration-flow-visual.svg" alt="" />
             </div>
             <div class="wizard-path" aria-label="Assessment workflow">
-              <span class="active">Upload</span>
-              <span>Detect</span>
-              <span>Map</span>
-              <span>Design</span>
-              <span>Review</span>
+              <button type="button" class="active" data-wizard-target="0">Diagram</button>
+              <button type="button" data-wizard-target="1">Route</button>
+              <button type="button" data-wizard-target="2">Goals</button>
+              <button type="button" data-wizard-target="3">Run</button>
             </div>
           </div>
           <form id="analysisForm" class="form-stack">
-            <section class="intake-step">
+            <section class="intake-step" data-intake-step="0">
               <div class="step-label"><span>1</span><strong>Upload</strong></div>
+              <div class="demo-launcher" id="demoLauncher">
+                <div class="demo-launcher-top">
+                  <div>
+                    <p class="eyebrow">Samples</p>
+                    <strong>Ready diagrams</strong>
+                  </div>
+                </div>
+                <div class="demo-sample-grid" id="demoSampleGrid" aria-label="Bundled sample architecture diagrams"></div>
+                <div class="demo-sample-summary" id="demoSampleSummary">Select a sample.</div>
+              </div>
               <label class="drop-zone" id="dropZone">
                 <input id="fileInput" name="file" type="file" accept="image/*,.pdf" required />
-                <span class="drop-title">Upload architecture diagram</span>
-                <span class="drop-meta" id="fileMeta">PNG, JPG, WEBP, GIF, BMP, or PDF</span>
+                <span class="drop-title">Drag & drop your architecture diagram</span>
+                <span class="drop-meta" id="fileMeta">or click to upload - PNG, JPG, WEBP, GIF, BMP, or PDF</span>
               </label>
 
-              <div class="preview-frame" id="previewFrame">
-                <div class="preview-empty">No diagram selected</div>
+              <div class="preview-card">
+                <div class="preview-card-heading">
+                  <div>
+                    <span>Preview</span>
+                    <strong>Selected diagram</strong>
+                  </div>
+                </div>
+                <div class="preview-frame" id="previewFrame">
+                  <div class="preview-empty">No diagram selected</div>
+                </div>
               </div>
             </section>
 
-            <section class="intake-step">
+            <section
+              class="intake-step route-step bg-white rounded-2xl shadow-lg p-6 transition-all duration-200 ease-in-out"
+              data-intake-step="1"
+            >
               <div class="step-label"><span>2</span><strong>Cloud Route</strong></div>
-              <div class="field-grid">
-                <label>
-                  <span>Source provider</span>
+              <div class="field-grid route-field-grid">
+                <div class="route-field">
+                  <label class="route-field-label" for="sourceProvider">Source provider</label>
+                  <div class="route-select-shell">
                   <select id="sourceProvider" name="source_provider">
                     <option value="auto">Auto detect</option>
                     <option value="azure">Azure</option>
                     <option value="gcp">Google Cloud</option>
                     <option value="aws">AWS</option>
                   </select>
-                </label>
+                  </div>
+                </div>
 
-                <label>
-                  <span>Target provider</span>
+                <div class="route-field">
+                  <label class="route-field-label" for="targetProvider">Target provider</label>
+                  <div class="route-select-shell">
                   <select id="targetProvider" name="target_provider">
                     <option value="aws">AWS</option>
                     <option value="azure">Azure</option>
                     <option value="gcp">Google Cloud</option>
                   </select>
-                </label>
+                  </div>
+                </div>
               </div>
               <div class="provider-route-panel" id="providerRouteBadges" aria-label="Selected migration provider route"></div>
             </section>
 
-            <section class="intake-step">
-              <div class="step-label"><span>3</span><strong>Goals</strong></div>
-              <div class="preset-group" aria-label="Migration goal presets">
-                <button type="button" class="preset-button" data-goal="cost reduction">Cost</button>
-                <button type="button" class="preset-button" data-goal="modernization">Modernize</button>
-                <button type="button" class="preset-button" data-goal="disaster recovery">DR</button>
-                <button type="button" class="preset-button" data-goal="compliance">Compliance</button>
-                <button type="button" class="preset-button" data-goal="cloud exit strategy">Exit</button>
+            <section
+              class="intake-step goals-step bg-white rounded-2xl shadow-lg p-6 transition-all duration-200 ease-in-out"
+              data-intake-step="2"
+            >
+              <div class="step-label goals-step-header">
+                <span>3</span>
+                <div>
+                  <strong>Goals</strong>
+                  <small>Prioritize the business outcomes and target architecture direction.</small>
+                </div>
               </div>
 
-              <label>
-                <span>Goals</span>
-                <input
-                  id="goals"
-                  name="goals"
-                  type="text"
-                  placeholder="reduce operations, improve DR, modernize hosting"
-                />
-              </label>
+              <div class="goal-chip-panel" aria-label="Migration goal presets">
+                <span class="section-eyebrow">Outcome presets</span>
+                <div class="preset-group">
+                  <button type="button" class="preset-button" data-goal="cost reduction">Cost</button>
+                  <button type="button" class="preset-button" data-goal="modernization">Modernize</button>
+                  <button type="button" class="preset-button" data-goal="disaster recovery">DR</button>
+                  <button type="button" class="preset-button" data-goal="compliance">Compliance</button>
+                  <button type="button" class="preset-button" data-goal="cloud exit strategy">Exit</button>
+                </div>
+              </div>
 
-              <label>
-                <span>Migration intent</span>
-                <textarea
-                  id="migrationIntent"
-                  name="migration_intent"
-                  rows="4"
-                  placeholder="We are migrating this from Azure to AWS."
-                ></textarea>
-              </label>
+              <div class="goals-form-grid">
+                <label class="goals-form-field">
+                  <span>Goals</span>
+                  <input
+                    id="goals"
+                    name="goals"
+                    type="text"
+                    placeholder="reduce operations, improve DR, modernize hosting"
+                  />
+                  <small>Use comma-separated goals or tap the outcome presets above.</small>
+                </label>
+
+                <label class="goals-form-field">
+                  <span>Migration intent</span>
+                  <textarea
+                    id="migrationIntent"
+                    name="migration_intent"
+                    rows="4"
+                    placeholder="We are migrating this from Azure to AWS."
+                  ></textarea>
+                  <small>Summarize the desired target state in plain language.</small>
+                </label>
+              </div>
+
+              <details class="advanced-options goals-architecture-options">
+                <summary>
+                  <span>
+                    <strong>Architecture options</strong>
+                    <small>Fine tune the recommendation model when the pattern is already known.</small>
+                  </span>
+                  <span class="advanced-chevron" aria-hidden="true"></span>
+                </summary>
+                <div class="architecture-options-grid">
+                  <label class="goals-form-field">
+                    <span>Architecture variant</span>
+                    <div class="architecture-select-shell">
+                      <select id="architectureVariant">
+                        <option value="balanced">Balanced enterprise baseline</option>
+                        <option value="lift-and-shift">Lift and shift</option>
+                        <option value="managed-modernization">Managed modernization</option>
+                        <option value="serverless-event-driven">Serverless and event-driven</option>
+                        <option value="data-platform">Data platform modernization</option>
+                      </select>
+                    </div>
+                  </label>
+
+                  <label class="goals-form-field">
+                    <span>Architecture pattern</span>
+                    <div class="architecture-select-shell">
+                      <select id="architecturePattern">
+                        <option value="auto">Auto detect</option>
+                        <option value="hybrid-connectivity">Hybrid connectivity</option>
+                        <option value="data-platform">Data platform</option>
+                        <option value="iot-data-platform">IoT data platform</option>
+                        <option value="graphrag">GraphRAG / knowledge graph</option>
+                        <option value="web-application">Web application</option>
+                        <option value="microservices">Microservices</option>
+                        <option value="analytics-ai">Analytics and AI</option>
+                      </select>
+                    </div>
+                  </label>
+                </div>
+              </details>
             </section>
 
-            <details class="advanced-options">
-              <summary>Architecture options</summary>
-              <label>
-                <span>Architecture variant</span>
-                <select id="architectureVariant">
-                  <option value="balanced">Balanced enterprise baseline</option>
-                  <option value="lift-and-shift">Lift and shift</option>
-                  <option value="managed-modernization">Managed modernization</option>
-                  <option value="serverless-event-driven">Serverless and event-driven</option>
-                  <option value="data-platform">Data platform modernization</option>
-                </select>
-              </label>
-
-              <label>
-                <span>Architecture pattern</span>
-                <select id="architecturePattern">
-                  <option value="auto">Auto detect</option>
-                  <option value="hybrid-connectivity">Hybrid connectivity</option>
-                  <option value="data-platform">Data platform</option>
-                  <option value="iot-data-platform">IoT data platform</option>
-                  <option value="graphrag">GraphRAG / knowledge graph</option>
-                  <option value="web-application">Web application</option>
-                  <option value="microservices">Microservices</option>
-                  <option value="analytics-ai">Analytics and AI</option>
-                </select>
-              </label>
-            </details>
-
-            <section class="intake-step run-step">
-              <div class="step-label"><span>4</span><strong>Review & Run</strong></div>
-              <button class="primary-action" id="submitButton" type="submit">
-                Run Assessment
+            <section
+              class="intake-step run-step bg-white rounded-2xl shadow-xl p-6 transition-all duration-200 ease-in-out"
+              data-intake-step="3"
+            >
+              <div class="step-label run-step-header">
+                <span>4</span>
+                <div>
+                  <strong>Review & Run</strong>
+                  <small>Confirm the intake package before generating the enterprise assessment.</small>
+                </div>
+              </div>
+              <div class="run-readiness-card" id="runReadinessCard">
+                <strong>Ready when the diagram, route, and intent are set.</strong>
+                <span>The assessment uses the visible diagram plus these intake values to generate mappings, risks, target design, and the report.</span>
+              </div>
+              <button class="primary-action run-submit-button" id="submitButton" type="submit">
+                <span class="run-submit-idle">Run Assessment</span>
+                <span class="run-submit-loading" hidden>
+                  <span class="run-submit-spinner" aria-hidden="true"></span>
+                  Running Assessment
+                </span>
               </button>
             </section>
+            <div class="wizard-controls" aria-label="Intake wizard controls">
+              <button type="button" class="secondary-action" id="wizardBackButton">Back</button>
+              <button type="button" class="primary-action wizard-next-button" id="wizardNextButton">Next</button>
+            </div>
           </form>
         </section>
 
         <section class="results-panel" aria-label="Assessment results">
           <div class="result-header">
             <div>
-              <p class="eyebrow">Assessment Output</p>
-              <h2 id="resultTitle">Ready</h2>
+              <p class="eyebrow">Workspace</p>
+              <h2 id="resultTitle">Dashboard</h2>
             </div>
             <div class="result-actions">
-              <button type="button" class="icon-button intake-toggle" id="toggleIntakeButton" title="Show or hide guided intake">
-                Intake
+              <button type="button" class="icon-button intake-toggle" id="toggleIntakeButton" title="Return to dashboard">
+                Dashboard
               </button>
               <div class="view-toggle" aria-label="View mode">
-                <button type="button" class="active" data-view-mode="executive">Executive</button>
-                <button type="button" data-view-mode="architect">Architect</button>
+                <button type="button" class="active" data-view-mode="executive">Exec</button>
+                <button type="button" data-view-mode="architect">Arch</button>
               </div>
               <button type="button" class="icon-button" id="saveAssessmentButton" title="Save assessment" disabled>
                 Save
@@ -233,6 +313,8 @@
               </button>
             </div>
           </div>
+
+          <section class="assessment-dashboard" id="assessmentDashboard" aria-label="Assessment dashboard"></section>
 
           <div class="summary-grid decision-snapshot" id="summaryGrid">
             <div class="metric">
@@ -273,7 +355,7 @@
             <button type="button" class="tab active" data-tab="overview">Overview</button>
             <button type="button" class="tab" data-tab="source">Source</button>
             <button type="button" class="tab" data-tab="mapping">Mapping</button>
-            <button type="button" class="tab" data-tab="diagram">Architecture</button>
+            <button type="button" class="tab" data-tab="diagram">Diagram</button>
             <button type="button" class="tab" data-tab="plan">Plan</button>
             <button type="button" class="tab" data-tab="risks">Risks</button>
             <button type="button" class="tab" data-tab="cost">Cost</button>
@@ -469,6 +551,14 @@
               <input id="reviewerName" type="text" placeholder="Lead architect or approver" />
             </label>
             <label>
+              <span>Decision owner</span>
+              <input id="decisionOwner" type="text" placeholder="Accountable sponsor or architecture board" />
+            </label>
+            <label>
+              <span>Approval target date</span>
+              <input id="approvalTargetDate" type="date" />
+            </label>
+            <label>
               <span>Workflow status</span>
               <select id="workflowStatus">
                 <option value="ai_draft">AI Draft</option>
@@ -523,59 +613,214 @@
       </main>
     </div>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-
-    <section class="auth-overlay" id="authOverlay" aria-label="CloudBridge IQ sign in">
-      <div class="auth-card">
-        <div class="auth-brand">
-          <img class="brand-mark" src="assets/cloudbridge-iq-mark.svg" alt="" />
+    <section
+      class="compare-drawer"
+      id="assessmentCompareDialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="assessmentCompareTitle"
+      hidden
+    >
+      <button type="button" class="compare-drawer-backdrop" data-compare-close aria-label="Close comparison"></button>
+      <div class="compare-drawer-panel">
+        <header class="compare-drawer-header">
           <div>
-            <p class="eyebrow">Secure Workspace</p>
-            <h2>Sign in to CloudBridge IQ</h2>
+            <p class="eyebrow">AI Portfolio Compare</p>
+            <h2 id="assessmentCompareTitle">Assessment Comparison</h2>
+            <span id="assessmentCompareSubtitle">Compare two architecture assessments with review-ready reasoning.</span>
           </div>
-        </div>
-        <p>
-          Aryan is assigned admin and architect access. Other users can enter as reviewers or viewers.
-        </p>
-        <form id="authForm" class="auth-form">
-          <label>
-            <span>Name</span>
-            <input id="authDisplayName" type="text" autocomplete="name" placeholder="Aryan or reviewer name" required />
-          </label>
-          <label>
-            <span>Email or user ID</span>
-            <input id="authEmail" type="text" autocomplete="username" placeholder="optional" />
-          </label>
-          <label>
-            <span>Requested access</span>
-            <select id="authRequestedRole">
-              <option value="reviewer">Reviewer</option>
-              <option value="viewer">Viewer</option>
-            </select>
-          </label>
-          <label>
-            <span>Admin password</span>
-            <input id="authAdminPassword" type="password" autocomplete="current-password" placeholder="Only if configured" />
-          </label>
-          <button type="submit" class="primary-action" id="authSubmitButton">Sign in</button>
-          <div class="auth-error" id="authError" hidden></div>
-        </form>
-        <div class="role-matrix">
-          <div>
-            <strong>Admin / Architect</strong>
-            <span>Run, edit, review, approve, export.</span>
+          <div class="compare-drawer-actions">
+            <button type="button" data-compare-copy>Copy Brief</button>
+            <button type="button" data-compare-close aria-label="Close comparison">Close</button>
           </div>
-          <div>
-            <strong>Reviewer</strong>
-            <span>Run assessments, comment, save, export.</span>
-          </div>
-          <div>
-            <strong>Viewer</strong>
-            <span>Read-only assessment access.</span>
-          </div>
-        </div>
+        </header>
+        <div class="compare-drawer-content" id="assessmentCompareContent" aria-live="polite"></div>
       </div>
     </section>
 
-    <script src="app.js?v=pdf-export-20260601" defer></script>
+    <section
+      class="auth-overlay fixed inset-0 z-[100] flex min-h-screen items-start justify-center overflow-y-auto bg-gradient-to-br from-slate-100 via-white to-blue-100 px-4 py-6 text-slate-950 transition-colors duration-300 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950 dark:text-white sm:items-center sm:px-6"
+      id="authOverlay"
+      aria-label="CloudBridge IQ sign in"
+    >
+      <div class="auth-grid-pattern pointer-events-none absolute inset-0 opacity-80"></div>
+      <div class="pointer-events-none absolute inset-0 overflow-hidden">
+        <span class="auth-orb auth-orb-one absolute -left-24 top-10 h-72 w-72 rounded-full bg-blue-400/30 blur-3xl dark:bg-blue-500/20"></span>
+        <span class="auth-orb auth-orb-two absolute right-[-6rem] top-24 h-80 w-80 rounded-full bg-indigo-400/25 blur-3xl dark:bg-indigo-500/20"></span>
+        <span class="auth-orb auth-orb-three absolute bottom-[-7rem] left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-cyan-300/25 blur-3xl dark:bg-cyan-400/10"></span>
+      </div>
+
+      <div class="auth-card auth-card-premium relative z-10 w-full max-w-[480px] overflow-hidden rounded-2xl border border-white/60 bg-white/75 p-5 shadow-2xl shadow-slate-900/20 backdrop-blur-2xl transition-colors duration-300 dark:border-white/10 dark:bg-slate-900/65 dark:shadow-black/40 sm:p-6">
+        <div class="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/90 to-transparent dark:via-white/30"></div>
+        <button
+          type="button"
+          class="auth-theme-toggle absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-xl border border-slate-200/80 bg-white/75 text-slate-600 shadow-sm shadow-slate-900/5 outline-none transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-600 hover:shadow-md focus:ring-2 focus:ring-blue-500/40 dark:border-white/10 dark:bg-white/10 dark:text-slate-300 dark:hover:border-blue-400/50 dark:hover:text-white"
+          id="authThemeToggle"
+          aria-label="Toggle dark mode"
+          aria-pressed="false"
+        >
+          <svg class="auth-theme-sun h-5 w-5 dark:hidden" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 4V2m0 20v-2m8-8h2M2 12h2m14.95-6.95 1.42-1.42M3.63 20.37l1.42-1.42m0-13.9L3.63 3.63m16.74 16.74-1.42-1.42M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <svg class="auth-theme-moon hidden h-5 w-5 dark:block" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M21 14.2A7.6 7.6 0 0 1 9.8 3a8.7 8.7 0 1 0 11.2 11.2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+
+        <header class="auth-brand auth-stage auth-delay-0 flex items-center gap-3 pr-12">
+          <span class="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-950 shadow-lg shadow-blue-900/15 ring-1 ring-white/70 dark:bg-white/10 dark:ring-white/10">
+            <img class="h-9 w-9" src="assets/cloudbridge-iq-mark.svg" alt="" />
+          </span>
+          <div class="min-w-0">
+            <div class="mb-1 flex flex-wrap items-center gap-2">
+              <span class="rounded-full border border-blue-200/80 bg-blue-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200">
+                Secure Workspace
+              </span>
+            </div>
+            <h2 class="m-0 text-2xl font-semibold leading-tight tracking-tight text-slate-950 dark:text-white">CloudBridge IQ</h2>
+            <p class="m-0 mt-1 text-sm leading-5 text-slate-500 dark:text-slate-400">Sign in to your migration assessment workspace.</p>
+          </div>
+        </header>
+
+        <p class="auth-stage auth-delay-1 mt-5 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          Use admin / admin for demo administrator access. Other users can enter as reviewers or viewers.
+        </p>
+
+        <form id="authForm" class="auth-form mt-5 grid gap-3.5">
+          <label class="auth-stage auth-delay-2 auth-floating-field relative block">
+            <span class="sr-only">Name</span>
+            <span class="auth-field-icon pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition duration-200 dark:text-slate-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M15.75 7.5a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <input
+              id="authDisplayName"
+              class="auth-control peer h-14 w-full rounded-xl border border-gray-300 bg-white/90 px-4 pb-2 pl-12 pt-5 text-sm font-semibold text-slate-950 shadow-sm outline-none transition duration-200 placeholder:text-transparent hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:border-white/20 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
+              type="text"
+              autocomplete="name"
+              placeholder="admin or reviewer name"
+              required
+            />
+            <span class="pointer-events-none absolute left-12 top-2 z-10 text-[11px] font-semibold text-slate-500 transition-all duration-200 peer-placeholder-shown:top-[1.05rem] peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-400 peer-focus:top-2 peer-focus:text-[11px] peer-focus:text-blue-600 dark:text-slate-400 dark:peer-placeholder-shown:text-slate-500 dark:peer-focus:text-blue-300">Name</span>
+          </label>
+
+          <label class="auth-stage auth-delay-3 auth-floating-field relative block">
+            <span class="sr-only">Email or user ID</span>
+            <span class="auth-field-icon pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition duration-200 dark:text-slate-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4.5 6.75h15v10.5h-15V6.75Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="m5.25 7.5 6.75 5.25L18.75 7.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <input
+              id="authEmail"
+              class="auth-control peer h-14 w-full rounded-xl border border-gray-300 bg-white/90 px-4 pb-2 pl-12 pt-5 text-sm font-semibold text-slate-950 shadow-sm outline-none transition duration-200 placeholder:text-transparent hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:border-white/20 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
+              type="text"
+              autocomplete="username"
+              placeholder="optional"
+            />
+            <span class="pointer-events-none absolute left-12 top-2 z-10 text-[11px] font-semibold text-slate-500 transition-all duration-200 peer-placeholder-shown:top-[1.05rem] peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-400 peer-focus:top-2 peer-focus:text-[11px] peer-focus:text-blue-600 dark:text-slate-400 dark:peer-placeholder-shown:text-slate-500 dark:peer-focus:text-blue-300">Email or user ID</span>
+          </label>
+
+          <label class="auth-stage auth-delay-4 auth-floating-field relative block">
+            <span class="sr-only">Requested access</span>
+            <span class="auth-field-icon pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition duration-200 dark:text-slate-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3.75 5.25 6v5.1c0 4.2 2.85 7.8 6.75 8.9 3.9-1.1 6.75-4.7 6.75-8.9V6L12 3.75Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="m9.75 12 1.5 1.5 3.25-3.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <select
+              id="authRequestedRole"
+              class="auth-control h-14 w-full appearance-none rounded-xl border border-gray-300 bg-white/90 px-4 pb-2 pl-12 pr-12 pt-5 text-sm font-semibold text-slate-950 shadow-sm outline-none transition duration-200 hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:border-white/20 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
+            >
+              <option value="reviewer">Reviewer</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <span class="pointer-events-none absolute left-12 top-2 z-10 text-[11px] font-semibold text-slate-500 dark:text-slate-400">Requested access</span>
+            <span class="pointer-events-none absolute right-4 top-1/2 z-10 -translate-y-1/2 text-slate-400 dark:text-slate-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m7.5 9.75 4.5 4.5 4.5-4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+          </label>
+
+          <label class="auth-stage auth-delay-5 auth-floating-field relative block">
+            <span class="sr-only">Admin password</span>
+            <span class="auth-field-icon pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition duration-200 dark:text-slate-500">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M5.75 10.5h12.5v9H5.75v-9Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M12 14v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </span>
+            <input
+              id="authAdminPassword"
+              class="auth-control peer h-14 w-full rounded-xl border border-gray-300 bg-white/90 px-4 pb-2 pl-12 pt-5 text-sm font-semibold text-slate-950 shadow-sm outline-none transition duration-200 placeholder:text-transparent hover:border-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:border-white/20 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Only if configured"
+            />
+            <span class="pointer-events-none absolute left-12 top-2 z-10 text-[11px] font-semibold text-slate-500 transition-all duration-200 peer-placeholder-shown:top-[1.05rem] peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-400 peer-focus:top-2 peer-focus:text-[11px] peer-focus:text-blue-600 dark:text-slate-400 dark:peer-placeholder-shown:text-slate-500 dark:peer-focus:text-blue-300">Admin password</span>
+          </label>
+
+          <button
+            type="submit"
+            class="auth-stage auth-delay-6 auth-submit-button relative mt-1 h-12 w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 bg-[length:200%_100%] px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/25 outline-none transition duration-200 hover:scale-[1.02] hover:brightness-110 focus:ring-4 focus:ring-blue-500/25 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 dark:shadow-blue-950/40"
+            id="authSubmitButton"
+          >
+            <span id="authSubmitIdle">Sign in</span>
+            <span id="authSubmitLoading" class="hidden items-center justify-center gap-2">
+              <span class="auth-spinner h-4 w-4 rounded-full border-2 border-white/40 border-t-white"></span>
+              Signing in
+            </span>
+          </button>
+
+          <div
+            class="auth-error auth-stage auth-alert rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold leading-5 text-red-700 shadow-sm shadow-red-900/5 dark:border-red-400/30 dark:bg-red-950/45 dark:text-red-200"
+            id="authError"
+            hidden
+          ></div>
+        </form>
+
+        <footer class="role-matrix auth-stage auth-delay-7 mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <button type="button" data-auth-role-card="admin" class="auth-role-card group rounded-xl border border-slate-200 bg-white/75 p-3 text-left shadow-sm shadow-slate-900/5 outline-none transition-all duration-200 hover:-translate-y-1 hover:border-blue-400 hover:shadow-lg hover:shadow-blue-500/10 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:hover:border-blue-300/60">
+            <span class="auth-role-icon auth-role-icon-admin" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3.5 5.5 6v5.2c0 4.1 2.7 7.7 6.5 9.1 3.8-1.4 6.5-5 6.5-9.1V6L12 3.5Z" />
+                <path d="m9.25 12 1.75 1.75L15 9.5" />
+              </svg>
+            </span>
+            <strong class="block text-sm font-bold text-slate-950 dark:text-white">Admin / Architect</strong>
+            <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">Full review, approval, export.</span>
+          </button>
+          <button type="button" data-auth-role-card="reviewer" aria-pressed="true" class="auth-role-card active group rounded-xl border border-blue-300 bg-blue-50/70 p-3 text-left shadow-sm shadow-blue-500/10 outline-none transition-all duration-200 hover:-translate-y-1 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10 focus:ring-4 focus:ring-blue-500/15 dark:border-blue-400/40 dark:bg-blue-400/10">
+            <span class="auth-role-icon auth-role-icon-reviewer" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M9 4.5h6l1 2h2.5v13h-13v-13H8l1-2Z" />
+                <path d="M9 11h6" />
+                <path d="M9 15h4" />
+              </svg>
+            </span>
+            <strong class="block text-sm font-bold text-slate-950 dark:text-white">Reviewer</strong>
+            <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">Run, comment, save, export.</span>
+          </button>
+          <button type="button" data-auth-role-card="viewer" class="auth-role-card group rounded-xl border border-slate-200 bg-white/75 p-3 text-left shadow-sm shadow-slate-900/5 outline-none transition-all duration-200 hover:-translate-y-1 hover:border-blue-400 hover:shadow-lg hover:shadow-blue-500/10 focus:ring-4 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/10 dark:hover:border-blue-300/60">
+            <span class="auth-role-icon auth-role-icon-viewer" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M3.5 12s3-5 8.5-5 8.5 5 8.5 5-3 5-8.5 5-8.5-5-8.5-5Z" />
+                <path d="M14.25 12a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+              </svg>
+            </span>
+            <strong class="block text-sm font-bold text-slate-950 dark:text-white">Viewer</strong>
+            <span class="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">Read-only assessment access.</span>
+          </button>
+        </footer>
+      </div>
+    </section>
+
+    <script type="module" src="react/modern-ui.js?v=dashboard-saas-20260604"></script>
+  <script src="app.js?v=dashboard-saas-20260605-pan-preview" defer></script>
   </body>
 </html>

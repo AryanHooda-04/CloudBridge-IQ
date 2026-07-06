@@ -2,10 +2,11 @@
 
 AI Cloud Migration Assessment Platform
 
-Version: 1.0  
-Prepared for: CloudBridge IQ project review  
-Repository: CloudBridge-IQ  
+Version: 1.1
+Prepared for: CloudBridge IQ project review
+Repository: CloudBridge-IQ
 Primary runtime: FastAPI, LangGraph, LangChain, Pydantic, OpenAI, ReportLab, Pillow
+Last updated: 2026-06-04
 
 This document is written as a page-broken Markdown document. When exported to PDF from a Markdown editor or document tool, each `\newpage` marker can be treated as a page break.
 
@@ -27,6 +28,9 @@ The main value proposition is not just diagram OCR. The app performs a multi-ste
 - Expose everything through a FastAPI backend and an enterprise-style browser UI.
 - Provide PDF, Markdown, and PNG exports.
 - Allow role-based access for admin, architect, reviewer, and viewer users.
+- Provide a dashboard-first SaaS experience with previous runs, current status, sign out, and an embedded New Run wizard.
+- Load bundled sample diagrams from metadata so demos do not require manual file hunting.
+- Compare two assessments with an LLM-backed portfolio comparison and deterministic fallback when the model times out or is unavailable.
 
 The project is intentionally structured like a production starter. It separates orchestration, data contracts, model prompts, service mapping, architecture generation, reporting, scoring, chat, authentication, and exports into isolated modules.
 
@@ -146,7 +150,14 @@ Key file responsibilities:
 
 ## Page 5 - Request Lifecycle
 
-A typical assessment starts in the browser. The user uploads a diagram, chooses a source provider hint, chooses a target provider, enters intent and goals, and clicks Run Assessment.
+A typical assessment starts in the browser dashboard. After sign-in, the user lands on the Dashboard first, not a report workspace. The dashboard shows the current assessment, portfolio metrics, all available report rows, and a New Run section.
+
+The New Run workflow supports two starting paths:
+
+- Select a bundled sample diagram card. The UI reads sample metadata, loads the PNG, and fills the recommended source provider, target provider, migration intent, goals, architecture variant, and architecture pattern.
+- Upload a custom image or PDF diagram through the dropzone.
+
+After the diagram is selected, the user confirms the cloud route, adjusts goals and intent, reviews the run summary, and clicks Run Assessment.
 
 The browser reads the file into base64 and posts a JSON payload to `/api/session` with:
 
@@ -177,7 +188,7 @@ The graph returns a `MigrationAssessmentReport`. The backend converts this repor
 - Analysis metadata
 - Assessment insights for dashboards
 
-The browser receives that structured response and renders multiple views: Overview, Source, Mapping, Architecture, Plan, Risks, Cost, Gate, Agent, and Report.
+The browser receives that structured response and renders the full assessment workspace. Opening a report from the dashboard reveals the assessment tabs and actions. The dashboard remains available so users can return to portfolio history, compare assessments, or start a new run.
 
 \newpage
 
@@ -253,7 +264,7 @@ Permission flags:
 - `can_approve`
 - `can_admin`
 
-Aryan identities are configured as admin and architect identities by default. The admin password is validated only for matching admin identities. Other users are constrained to reviewer or viewer roles.
+The demo `admin` identity is configured as both admin and architect by default, with `admin` as the demo password. The admin password is validated only for matching admin identities. Other users are constrained to reviewer or viewer roles.
 
 Sessions are signed cookies. The cookie payload includes display name, email, primary role, roles, issued time, and expiration time. The signature is created with HMAC-SHA256 using `AUTH_SECRET_KEY`.
 
@@ -961,39 +972,53 @@ This fallback is important for demos and corporate networks. It means the agent 
 
 ## Page 27 - UI And Enterprise Console Layer
 
-The UI is a single-page browser application in `app/static/app.js` and `app/static/styles.css`.
+The UI is a single-page browser application served from `app/static/index.html`, `app/static/app.js`, `app/static/styles.css`, and the React-built dashboard module under `frontend/src/modern-ui.jsx`.
+
+The current experience is dashboard-first:
+
+- The user signs in through a premium SaaS-style CloudBridge IQ authentication page.
+- Light theme is the default. The post-login theme button is intentionally removed until the theme system is ready for the full product.
+- After sign-in, the user lands on the Dashboard only. There is no sidebar-first upload experience.
+- The dashboard contains the current assessment, portfolio metrics, all visible report rows, sign out, and the New Run workflow.
+- Clicking `Open` or `Open report` reveals the assessment workspace and report tabs.
+- The user can still navigate back to Dashboard from the workspace.
 
 Major UI areas:
 
-- login overlay
-- fixed app shell
-- left navigation
-- top command header
-- guided intake panel
-- assessment output workspace
-- executive and architect view toggle
-- summary metric cards
-- provider-branded badges
-- architecture canvas
-- selected service inspector
-- mapping comparison table
-- plan and wave sections
-- risk dashboard
-- cost dashboard
-- decision gate
-- agent tab
-- report memo
-- export controls
+- login overlay with role cards for Admin / Architect, Reviewer, and Viewer
+- dashboard header with product name, user pill, role context, and sign out
+- current assessment status card
+- recent runs and all report history rows
+- comparison action for assessment-to-assessment review
+- New Run wizard embedded under the dashboard
+- bundled sample diagram cards with thumbnails, provider route badges, pattern labels, selected state, and hover zoom-to-new-tab action
+- upload dropzone and selected diagram preview
+- route selector with source/target cloud flow
+- goal chips, intent fields, architecture variant, and pattern controls
+- Review & Run confirmation screen
+- assessment workspace with Dashboard, Exec, and Arch mode switcher
+- compact action row for Save, Copy, PDF, Markdown, and PNG
+- full report views for mapping, architecture, plan, risks, cost, review gate, agent, and export memo
 
-The UI stores local history in browser local storage. It is not server-side persistence. Saved assessments, reviewer comments, and version comparison are useful locally, but a production version should move this data into a database with audit trails.
+The latest visual design uses a soft light-blue SaaS design system:
+
+- gradient page background from blue-50 through slate-100 to blue-100
+- light glass-style dashboard panels with subtle blue borders
+- white and blue-tinted cards with soft depth
+- colorful metric top strips and progress bars
+- provider badges for AWS, Azure, and GCP
+- compact pill-style tab switchers with animated active states
+- modern button states, hover lift, and focus visibility
+
+The UI stores working history in browser local storage for fast demos. The backend also includes an enterprise SQLite persistence layer for audit events, evidence records, and cost-model snapshots. A production rollout should continue moving portfolio records, comments, assignments, and binary evidence into governed server-side storage.
 
 The provider visual language is intentionally subtle:
 
 - AWS uses orange accents.
 - Azure uses blue accents.
-- GCP uses green accents where applicable.
+- GCP uses green and multicolor cloud accents where applicable.
 
-The UI avoids a chatbot-first design. The agent is a tab in the assessment console, not the entire product. This matches the intended enterprise workflow: upload, analyze, review, validate, export.
+The UI avoids a chatbot-first design. The agent is a workspace capability, not the whole product. This matches the intended enterprise workflow: dashboard, sample or upload, analyze, compare, review, validate, and export.
 
 \newpage
 
@@ -1004,8 +1029,12 @@ CloudBridge IQ supports:
 - Markdown export
 - PDF export
 - rendered architecture PNG export
+- Copy-to-clipboard report output
+- Copy-to-clipboard assessment comparison brief
 
-Markdown export is client-side. It uses `buildExportMarkdown()` to combine the generated report with review workflow information, cost estimate snapshot, architect notes, reviewer comments, and section comments.
+Markdown export is client-side. It uses `buildExportMarkdown()` to combine the generated report with review workflow information, cost estimate snapshot, architect notes, reviewer comments, section comments, and the current assessment context.
+
+Assessment comparison brief export is also client-side. The comparison drawer renders the LLM or fallback comparison response and can copy a concise Markdown brief for review boards, project reviews, or interview demos.
 
 PNG export is backend-generated. The browser posts the target architecture to `/api/session` with `action: "diagram_png"`. The backend returns `image/png`.
 
@@ -1031,6 +1060,8 @@ The backend generates the rendered architecture PNG and then builds a PDF using 
 
 PDF export intentionally avoids external Mermaid image services because corporate security tools can block them.
 
+The action row is intentionally compact: Dashboard, Exec, Arch, Save, Copy, PDF, MD, and PNG live in one polished control group so report actions feel fast without dominating the workspace.
+
 \newpage
 
 ## Page 29 - Libraries And Their Use
@@ -1049,6 +1080,13 @@ Agent and model layer:
 - `langchain`: model abstraction and structured output integration.
 - `langchain-openai`: ChatOpenAI provider integration.
 - `httpx`: custom HTTP clients for OpenAI, including SSL verification bypass when required.
+
+Frontend:
+
+- `react`: reusable dashboard, sample card, and stat components for the modern UI shell.
+- `vite`: builds the React module into static assets served by FastAPI.
+- `tailwindcss`: utility-first styling for the modern SaaS dashboard components.
+- `lucide-react`: icon primitives for UI actions such as external image preview.
 
 File and diagram processing:
 
@@ -1075,19 +1113,20 @@ Testing:
 
 The entire assessment is generated through a layered pipeline:
 
-1. The browser uploads a diagram and migration context.
-2. FastAPI authenticates the user and validates the request.
-3. `diagram_ingestion.py` prepares image or PDF content.
-4. `service_detection.py` uses OpenAI vision structured output or heuristic fallback to create a `SourceArchitecture`.
-5. `cloud_mapping.py` loads YAML mappings and maps source services to target candidates.
-6. `architecture_generator.py` builds a target architecture, adding provider-native networking, identity, security, observability, backup, and pattern-specific components.
-7. `mermaid_generator.py` creates a Mermaid graph from target components and relationships.
-8. `migration_strategy.py` creates required changes, phases, risks, benefits, drawbacks, and final verdict.
-9. `report_generator.py` renders the structured report into Markdown.
-10. `assessment_insights.py` calculates deterministic readiness, risk, cost confidence, effort, planning, and review-gate insights.
-11. FastAPI returns `AnalyzeMigrationResponse`.
-12. The browser renders the assessment workspace and exports.
-13. The chat agent uses the current assessment as grounding context for follow-up questions.
+1. The browser starts on the dashboard and either loads a sample diagram from metadata or accepts a custom upload.
+2. The New Run wizard collects route, intent, goals, architecture variant, and architecture pattern.
+3. FastAPI authenticates the user and validates the request.
+4. `diagram_ingestion.py` prepares image or PDF content.
+5. `service_detection.py` uses OpenAI vision structured output or heuristic fallback to create a `SourceArchitecture`.
+6. `cloud_mapping.py` loads YAML mappings and maps source services to target candidates.
+7. `architecture_generator.py` builds a target architecture, adding provider-native networking, identity, security, observability, backup, and pattern-specific components.
+8. `mermaid_generator.py` creates a Mermaid graph from target components and relationships.
+9. `migration_strategy.py` creates required changes, phases, risks, benefits, drawbacks, and final verdict.
+10. `report_generator.py` renders the structured report into Markdown.
+11. `assessment_insights.py` calculates deterministic readiness, risk, cost confidence, effort, planning, and review-gate insights.
+12. FastAPI returns `AnalyzeMigrationResponse`.
+13. The browser renders the dashboard row and the assessment workspace.
+14. Users can save, export, compare assessments, or ask the chat agent follow-up questions grounded in the current assessment.
 
 The most important architectural decision is that the app does not rely on one giant LLM answer. The LLM is used where it is strongest: interpreting diagrams and optionally reasoning about unmapped services. The rest of the platform uses structured data, deterministic logic, testable functions, and review workflows.
 
@@ -1100,12 +1139,12 @@ The project is strong as a production-oriented prototype, but several limitation
 - It does not perform real cloud inventory discovery.
 - It does not query pricing APIs.
 - It does not validate actual service quotas or regional availability.
-- It does not store assessments in a backend database.
 - It uses local signed-cookie authentication rather than enterprise SSO.
 - It does not perform local OCR for images.
 - It relies on the configured OpenAI vision model for high-confidence image-only detection.
 - It uses deterministic scoring rules, not a formal enterprise risk model.
-- It does not yet support multi-user server-side comments and audit logs.
+- It has SQLite persistence for enterprise workflow records, but portfolio-grade multi-user assessment history still needs a full database-backed workspace model.
+- It does not yet support fully server-side multi-user comment threads.
 - Architecture diagrams are review-level diagrams, not final implementation diagrams.
 
 These are acceptable for the current stage, but they should be addressed before using the application as a governed enterprise migration platform.
@@ -1504,3 +1543,137 @@ The next enterprise steps should be:
 - Add pricing API imports or cloud calculator import files.
 - Add role mapping from Entra ID groups.
 - Add database migration scripts if moving from SQLite to a managed SQL service.
+
+\newpage
+
+## Page 38 - Current UI Modernization And Demo Workflow
+
+The latest CloudBridge IQ update focuses on making the app feel like a premium enterprise SaaS product while preserving the existing assessment logic.
+
+### Login Experience
+
+The sign-in page has been modernized with:
+
+- CloudBridge IQ logo and title hierarchy.
+- Secure Workspace badge.
+- Inter/system font styling.
+- Light theme as the default.
+- Aligned input icons and role-card icons.
+- Role cards for Admin / Architect, Reviewer, and Viewer.
+- Loading, error, hover, and focus states.
+
+The post-login theme toggle is intentionally hidden for now. Theme switching can be reintroduced later once the full light/dark design system is production-ready across every workspace view.
+
+### Dashboard-First Product Flow
+
+The first authenticated screen is now the Dashboard. This is important for interviews and project reviews because it immediately shows the product's portfolio context rather than dropping the user into a partially empty report workspace.
+
+The dashboard contains:
+
+- Product title and signed-in user pill.
+- Sign out action.
+- Current assessment summary.
+- Recent Runs portfolio section.
+- Reports, Review, Approved, and Readiness metric cards.
+- All visible report/history rows, including the current run.
+- Open and Compare actions.
+- New Run workflow embedded below the dashboard.
+
+The dashboard uses a soft light-blue theme with glass-like panels, subtle blue borders, tinted cards, colorful metric strips, and compact action buttons.
+
+### New Run Wizard
+
+The New Run workflow is now embedded into the dashboard instead of being a sidebar. It contains four steps:
+
+1. Diagram
+2. Route
+3. Goals
+4. Run
+
+The Diagram step includes bundled sample architecture cards and an upload dropzone. The sample cards show:
+
+- architecture thumbnail
+- source cloud badge
+- target cloud badge
+- route arrow
+- sample title
+- architecture pattern label
+- selected state
+- hover zoom button that opens the sample image in a new tab
+
+The bundled sample data is loaded from:
+
+```text
+samples/architecture_diagrams/metadata.json
+```
+
+Adding a new PNG and corresponding metadata entry lets the local UI surface the new sample without a manual file-hunting workflow.
+
+Current bundled samples:
+
+- Azure Enterprise Web App
+- GCP IoT Data Platform
+- AWS Neo4j GraphRAG
+- Azure Hybrid Connectivity
+- AWS Event-Driven Microservices
+
+When a sample is selected, the UI fills the recommended source provider, target provider, migration intent, goals, architecture variant, and architecture pattern.
+
+### Report Workspace And Tabs
+
+Opening a report reveals the assessment workspace. The switcher is intentionally compact:
+
+- Dashboard
+- Exec
+- Arch
+- Save
+- Copy
+- PDF
+- MD
+- PNG
+
+The Exec and Arch mode tabs now use a pill-style segmented control. The active state uses a blue-to-indigo gradient and soft shadow. The previous visual grid/line artifact was removed from the dashboard background so the interface feels cleaner.
+
+### AI Portfolio Comparison
+
+The Compare action generates an enterprise assessment comparison between two runs.
+
+The comparison backend is implemented in:
+
+```text
+app/services/assessment_comparison.py
+```
+
+The comparison endpoint can be called through:
+
+```text
+POST /api/assessment/compare
+POST /api/session with action: compare_assessments
+```
+
+Comparison behavior:
+
+- Uses the configured text model from `MODEL_NAME` when OpenAI is available.
+- Sends compact assessment digests rather than the entire raw report.
+- Requests structured JSON comparison output.
+- Includes baseline readiness, current readiness, readiness delta, verdict movement, architecture deltas, mapping deltas, risk deltas, business impact, governance actions, and next steps.
+- Uses a deterministic local fallback when the LLM times out or fails.
+- Labels fallback output as a timeout/local comparison rather than claiming the model is simply unavailable.
+
+This gives the product a realistic enterprise review capability. A reviewer can compare a current assessment against a baseline run, copy the comparison brief, and use it as a decision-support artifact.
+
+### Files Updated By The Current UI Refresh
+
+The main files involved in the current modernization are:
+
+```text
+app/static/index.html
+app/static/app.js
+app/static/styles.css
+frontend/src/modern-ui.jsx
+frontend/src/modern-ui.css
+samples/architecture_diagrams/metadata.json
+app/services/assessment_comparison.py
+```
+
+The result is a dashboard-led product flow that is easier to demo, easier to understand, and closer to an enterprise cloud assessment tool than a raw upload form.

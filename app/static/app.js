@@ -4,6 +4,8 @@ const fileInput = document.querySelector("#fileInput");
 const fileMeta = document.querySelector("#fileMeta");
 const dropZone = document.querySelector("#dropZone");
 const previewFrame = document.querySelector("#previewFrame");
+const demoSampleGrid = document.querySelector("#demoSampleGrid");
+const demoSampleSummary = document.querySelector("#demoSampleSummary");
 const apiStatus = document.querySelector("#apiStatus");
 const resultTitle = document.querySelector("#resultTitle");
 const submitButton = document.querySelector("#submitButton");
@@ -52,6 +54,8 @@ const collapseIntakeButton = document.querySelector("#collapseIntakeButton");
 const qualityGates = document.querySelector("#qualityGates");
 const projectNameInput = document.querySelector("#projectName");
 const reviewerNameInput = document.querySelector("#reviewerName");
+const decisionOwnerInput = document.querySelector("#decisionOwner");
+const approvalTargetDateInput = document.querySelector("#approvalTargetDate");
 const assessmentTimeline = document.querySelector("#assessmentTimeline");
 const agentChatForm = document.querySelector("#agentChatForm");
 const agentChatInput = document.querySelector("#agentChatInput");
@@ -67,14 +71,32 @@ const authEmail = document.querySelector("#authEmail");
 const authRequestedRole = document.querySelector("#authRequestedRole");
 const authAdminPassword = document.querySelector("#authAdminPassword");
 const authSubmitButton = document.querySelector("#authSubmitButton");
+const authSubmitIdle = document.querySelector("#authSubmitIdle");
+const authSubmitLoading = document.querySelector("#authSubmitLoading");
 const authError = document.querySelector("#authError");
+const authThemeToggle = document.querySelector("#authThemeToggle");
+const authRoleCards = Array.from(document.querySelectorAll("[data-auth-role-card]"));
 const userChip = document.querySelector("#userChip");
 const userAvatar = document.querySelector("#userAvatar");
 const userRoleLabel = document.querySelector("#userRoleLabel");
 const userDisplayName = document.querySelector("#userDisplayName");
 const logoutButton = document.querySelector("#logoutButton");
+const assessmentDashboard = document.querySelector("#assessmentDashboard");
+const assessmentCompareDialog = document.querySelector("#assessmentCompareDialog");
+const assessmentCompareContent = document.querySelector("#assessmentCompareContent");
+const assessmentCompareSubtitle = document.querySelector("#assessmentCompareSubtitle");
+const wizardBackButton = document.querySelector("#wizardBackButton");
+const wizardNextButton = document.querySelector("#wizardNextButton");
+const intakeStepPanels = Array.from(document.querySelectorAll("[data-intake-step]"));
+const wizardButtons = Array.from(document.querySelectorAll("[data-wizard-target]"));
 const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
 const HISTORY_KEY = "cloudMigrationAssessments.v2";
+const AUTH_THEME_KEY = "cloudbridge.auth.theme";
+const TAB_GROUPS = {
+  architecture: ["source", "diagram", "plan"],
+  "risk-cost": ["risks", "cost"],
+  review: ["gate", "agent"],
+};
 
 let currentUser = null;
 let latestResult = null;
@@ -89,9 +111,24 @@ let timelineTimer = null;
 let timelineIndex = 0;
 let diagramZoom = 1;
 let diagramPanState = null;
+let previewPanState = null;
 let selectedCanvasComponentId = null;
 let agentChatHistory = [];
 let exportObjectUrls = [];
+let demoSamples = [];
+let selectedDemoSampleId = "";
+let activeIntakeStep = 0;
+let selectedAuthRoleCard = authRequestedRole?.value || "reviewer";
+let lastAuthThemeToggleAt = 0;
+let latestComparisonBrief = "";
+let dashboardRenderSignature = "";
+let demoSampleRenderSignature = "";
+let runReadinessSignature = "";
+let snapshotCondensedState = null;
+let snapshotFrameRequest = 0;
+let currentResultRenderToken = 0;
+let diagramAssetsRenderToken = 0;
+let reportAssetsRenderToken = 0;
 let reviewState = {
   reviewed: false,
   status: "ai_draft",
@@ -99,34 +136,53 @@ let reviewState = {
   comments: "",
   projectName: "",
   reviewer: "",
+  decisionOwner: "",
+  approvalTargetDate: "",
   sectionComments: {},
   evidence: {},
 };
 
 const TIMELINE_STEPS = [
-  ["ingest", "Ingestion"],
-  ["detect", "Detection"],
-  ["map", "Mapping"],
-  ["design", "Target Design"],
-  ["risks", "Risks"],
-  ["report", "Report"],
+  ["ingest", "Ingest Diagram"],
+  ["detect", "Detect Services"],
+  ["map", "Map Equivalents"],
+  ["design", "Design Target"],
+  ["risks", "Score Risks"],
+  ["report", "Build Decision Pack"],
 ];
 
+initializeAuthTheme();
+syncAuthRoleCards();
 checkHealth();
 initializeAuth();
+loadDemoSamples();
 renderSupportedProviders();
+enhanceProviderRouteSelects();
+enhanceArchitectureSelects();
 syncProviderRouteBadges();
 syncAppFrame();
 renderHistory();
+renderAssessmentDashboard();
+setActiveIntakeStep(0);
 setViewMode(viewMode);
 syncReviewMetadataInputs();
 resetAgentChat();
 syncSnapshotCondensed();
 
 setReviewRailCollapsed(true);
+enterDashboardMode();
 
-window.addEventListener("scroll", syncSnapshotCondensed, { passive: true });
-window.addEventListener("resize", syncSnapshotCondensed);
+window.addEventListener("cloudbridge-modern-ui-ready", () => {
+  renderDemoSampleCards();
+  renderAssessmentDashboard();
+});
+window.addEventListener("scroll", requestSnapshotCondensedSync, { passive: true });
+window.addEventListener("resize", requestSnapshotCondensedSync);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && assessmentCompareDialog && !assessmentCompareDialog.hidden) {
+    closeComparisonDrawer();
+  }
+});
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => activateTab(tab.dataset.tab));
@@ -140,6 +196,13 @@ document.querySelectorAll("[data-view-mode]").forEach((button) => {
   button.addEventListener("click", () => setViewMode(button.dataset.viewMode || "executive"));
 });
 
+wizardButtons.forEach((button) => {
+  button.addEventListener("click", () => setActiveIntakeStep(Number(button.dataset.wizardTarget || 0)));
+});
+
+wizardBackButton?.addEventListener("click", () => setActiveIntakeStep(activeIntakeStep - 1));
+wizardNextButton?.addEventListener("click", () => setActiveIntakeStep(activeIntakeStep + 1));
+
 toggleReviewRailButton?.addEventListener("click", () => {
   const collapsed = appShell?.classList.contains("review-rail-collapsed") ?? true;
   setReviewRailCollapsed(!collapsed);
@@ -147,7 +210,7 @@ toggleReviewRailButton?.addEventListener("click", () => {
 
 closeReviewRailButton?.addEventListener("click", () => setReviewRailCollapsed(true));
 
-toggleIntakeButton?.addEventListener("click", () => toggleIntakePanel());
+toggleIntakeButton?.addEventListener("click", () => enterDashboardMode());
 collapseIntakeButton?.addEventListener("click", () => toggleIntakePanel(true));
 
 authForm?.addEventListener("submit", async (event) => {
@@ -155,7 +218,24 @@ authForm?.addEventListener("submit", async (event) => {
   await signIn();
 });
 
-logoutButton?.addEventListener("click", async () => {
+bindThemeToggle(authThemeToggle);
+
+authRoleCards.forEach((card) => {
+  card.addEventListener("click", () => selectAuthRoleCard(card.dataset.authRoleCard || "reviewer"));
+});
+
+authRequestedRole?.addEventListener("change", () => {
+  selectedAuthRoleCard = authRequestedRole.value || "reviewer";
+  syncAuthRoleCards();
+});
+
+[authDisplayName, authEmail, authAdminPassword].forEach((control) => {
+  control?.addEventListener("input", () => control.classList.remove("auth-input-error"));
+});
+
+logoutButton?.addEventListener("click", signOut);
+
+async function signOut() {
   try {
     await apiFetch(`${API_BASE}/api/session`, { method: "DELETE" });
   } finally {
@@ -163,7 +243,7 @@ logoutButton?.addEventListener("click", async () => {
     applyRoleUi();
     showAuthOverlay("Signed out. Sign in to continue.");
   }
-});
+}
 
 document.querySelectorAll(".preset-button").forEach((button) => {
   button.addEventListener("click", () => {
@@ -213,6 +293,54 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const themeToggle = event.target.closest("[data-theme-toggle]");
+  if (themeToggle) {
+    event.preventDefault();
+    requestAuthThemeToggle();
+    return;
+  }
+
+  const navigateButton = event.target.closest("[data-navigate-tab]");
+  if (navigateButton) {
+    activateTab(navigateButton.dataset.navigateTab);
+    return;
+  }
+
+  const viewModeButton = event.target.closest("[data-view-mode]");
+  if (viewModeButton) {
+    setViewMode(viewModeButton.dataset.viewMode || "executive");
+    return;
+  }
+
+  const retryButton = event.target.closest("[data-retry-assessment]");
+  if (retryButton) {
+    form?.requestSubmit();
+    return;
+  }
+
+  const dashboardButton = event.target.closest("[data-dashboard-action]");
+  if (dashboardButton) {
+    const id = dashboardButton.dataset.dashboardId || "";
+    if (dashboardButton.dataset.dashboardAction === "open") {
+      openDashboardReport(id);
+    } else if (dashboardButton.dataset.dashboardAction === "compare") {
+      await compareDashboardReport(id);
+    }
+    return;
+  }
+
+  const compareClose = event.target.closest("[data-compare-close]");
+  if (compareClose) {
+    closeComparisonDrawer();
+    return;
+  }
+
+  const compareCopy = event.target.closest("[data-compare-copy]");
+  if (compareCopy) {
+    await copyComparisonBrief(compareCopy);
+    return;
+  }
+
   const mermaidButton = event.target.closest("[data-copy-mermaid]");
   if (mermaidButton) {
     const reportSource = mermaidButton
@@ -234,7 +362,7 @@ document.addEventListener("click", async (event) => {
     if (action === "open") {
       openHistoryItem(id);
     } else if (action === "compare") {
-      compareHistoryItem(id);
+      await compareHistoryItem(id);
     } else if (action === "delete") {
       deleteHistoryItem(id);
     }
@@ -360,12 +488,16 @@ document.addEventListener("input", (event) => {
     event.target === architectNotes ||
     event.target === reviewComments ||
     event.target === projectNameInput ||
-    event.target === reviewerNameInput
+    event.target === reviewerNameInput ||
+    event.target === decisionOwnerInput ||
+    event.target === approvalTargetDateInput
   ) {
     reviewState.notes = architectNotes.value;
     reviewState.comments = reviewComments.value;
     reviewState.projectName = projectNameInput.value;
     reviewState.reviewer = reviewerNameInput.value;
+    reviewState.decisionOwner = decisionOwnerInput?.value || "";
+    reviewState.approvalTargetDate = approvalTargetDateInput?.value || "";
     promoteReviewAfterArchitectComment(event.target);
     updateSelectedHistoryReviewState();
     syncAppFrame();
@@ -382,7 +514,7 @@ document.addEventListener("change", async (event) => {
   if (event.target === workflowStatus) {
     if (!hasPermission("can_architect_review")) {
       workflowStatus.value = reviewState.status;
-      showToast("Only Aryan or an architect can change workflow status.", "error");
+      showToast("Only an admin or architect can change workflow status.", "error");
       return;
     }
     if (workflowStatus.value === "approved" && latestResult && hasApprovalBlockers(latestResult)) {
@@ -405,6 +537,7 @@ document.addEventListener("change", async (event) => {
   if (event.target === sourceProvider || event.target === targetProvider) {
     syncProviderRouteBadges();
     setProviderTheme(latestResult || {});
+    syncRunReadiness();
     return;
   }
   if (event.target.matches("[data-relationship-field]")) {
@@ -429,11 +562,22 @@ document.addEventListener("change", async (event) => {
   }
 });
 
-goalsInput.addEventListener("input", syncPresetStates);
+goalsInput.addEventListener("input", () => {
+  syncPresetStates();
+  syncRunReadiness();
+});
+
+migrationIntent?.addEventListener("input", syncRunReadiness);
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
+  if (file) {
+    selectedDemoSampleId = "";
+    renderDemoSampleCards();
+    renderDemoSampleSummary(null);
+  }
   setFilePreview(file);
+  syncRunReadiness();
 });
 
 dropZone.addEventListener("dragover", (event) => {
@@ -453,7 +597,53 @@ dropZone.addEventListener("drop", (event) => {
     return;
   }
   fileInput.files = event.dataTransfer.files;
+  selectedDemoSampleId = "";
+  renderDemoSampleCards();
+  renderDemoSampleSummary(null);
   setFilePreview(file);
+  syncRunReadiness();
+});
+
+previewFrame?.addEventListener("pointerdown", (event) => {
+  if (!previewFrame.classList.contains("is-pannable") || event.button !== 0) {
+    return;
+  }
+  previewPanState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    scrollLeft: previewFrame.scrollLeft,
+    scrollTop: previewFrame.scrollTop,
+  };
+  previewFrame.classList.add("is-dragging");
+  previewFrame.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+});
+
+previewFrame?.addEventListener("pointermove", (event) => {
+  if (!previewPanState || previewPanState.pointerId !== event.pointerId) {
+    return;
+  }
+  previewFrame.scrollLeft = previewPanState.scrollLeft - (event.clientX - previewPanState.startX);
+  previewFrame.scrollTop = previewPanState.scrollTop - (event.clientY - previewPanState.startY);
+});
+
+["pointerup", "pointercancel", "lostpointercapture"].forEach((eventName) => {
+  previewFrame?.addEventListener(eventName, (event) => {
+    if (previewPanState && "pointerId" in event && previewPanState.pointerId !== event.pointerId) {
+      return;
+    }
+    previewPanState = null;
+    previewFrame.classList.remove("is-dragging");
+  });
+});
+
+demoSampleGrid?.addEventListener("click", async (event) => {
+  const card = event.target.closest("[data-demo-sample-id]");
+  if (!card || !hasPermission("can_assess")) {
+    return;
+  }
+  await applyDemoSample(card.dataset.demoSampleId || "");
 });
 
 form.addEventListener("submit", async (event) => {
@@ -468,6 +658,7 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  enterAssessmentWorkspace("overview");
   setLoading(true);
   startAssessmentTimeline();
   hideError();
@@ -502,6 +693,8 @@ form.addEventListener("submit", async (event) => {
       comments: "",
       projectName: projectNameInput.value || buildHistoryTitle(payload),
       reviewer: reviewerNameInput.value || "",
+      decisionOwner: decisionOwnerInput.value || "",
+      approvalTargetDate: approvalTargetDateInput.value || "",
       sectionComments: {},
       evidence: {},
     };
@@ -512,7 +705,8 @@ form.addEventListener("submit", async (event) => {
     enableActions(true);
     resultTitle.textContent = "Assessment Complete";
     showToast("Assessment complete. Review the decision snapshot and architecture workspace.", "success");
-    activateTab("overview");
+    enterAssessmentWorkspace("overview");
+    rememberCompletedRun();
   } catch (error) {
     showError(error.message || "Migration analysis failed.");
     resultTitle.textContent = "Needs Attention";
@@ -657,7 +851,7 @@ markReviewedButton.addEventListener("click", async () => {
     return;
   }
   if (!hasPermission("can_architect_review")) {
-    showToast("Only Aryan or an architect can mark architect review.", "error");
+    showToast("Only an admin or architect can mark architect review.", "error");
     return;
   }
   reviewState.reviewed = !reviewState.reviewed;
@@ -703,11 +897,99 @@ async function initializeAuth() {
   }
 }
 
+function initializeAuthTheme() {
+  setAuthTheme("light");
+}
+
+function setAuthTheme(theme) {
+  const useDark = theme === "dark";
+  document.documentElement.classList.toggle("dark", useDark);
+  const themeToggles = [authThemeToggle, ...document.querySelectorAll("[data-theme-toggle]")].filter(Boolean);
+  themeToggles.forEach((toggle) => {
+    toggle.setAttribute("aria-pressed", String(useDark));
+    toggle.setAttribute("title", useDark ? "Switch to light mode" : "Switch to dark mode");
+  });
+  try {
+    localStorage.setItem(AUTH_THEME_KEY, useDark ? "dark" : "light");
+  } catch {
+    // Theme persistence is a nice-to-have in local demos.
+  }
+}
+
+function toggleAuthTheme() {
+  const currentlyDark = document.documentElement.classList.contains("dark");
+  setAuthTheme(currentlyDark ? "light" : "dark");
+}
+
+function bindThemeToggle(toggle) {
+  if (!toggle) {
+    return;
+  }
+  toggle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    requestAuthThemeToggle();
+  });
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    requestAuthThemeToggle();
+  });
+  toggle.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    requestAuthThemeToggle();
+  });
+}
+
+function requestAuthThemeToggle() {
+  setAuthTheme("light");
+}
+
+function selectAuthRoleCard(role) {
+  selectedAuthRoleCard = role;
+  if (role === "viewer") {
+    authRequestedRole.value = "viewer";
+  } else {
+    authRequestedRole.value = "reviewer";
+  }
+  if (role === "admin" && !authDisplayName.value.trim()) {
+    authDisplayName.value = "admin";
+  }
+  syncAuthRoleCards();
+  if (role === "admin") {
+    authAdminPassword?.focus();
+  } else {
+    authDisplayName?.focus();
+  }
+}
+
+function syncAuthRoleCards() {
+  authRoleCards.forEach((card) => {
+    const active = card.dataset.authRoleCard === selectedAuthRoleCard;
+    card.classList.toggle("active", active);
+    card.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function setAuthSubmitState(isLoading) {
+  if (!authSubmitButton) {
+    return;
+  }
+  authSubmitButton.disabled = isLoading;
+  authSubmitButton.setAttribute("aria-busy", String(isLoading));
+  if (authSubmitIdle && authSubmitLoading) {
+    authSubmitIdle.hidden = isLoading;
+    authSubmitLoading.classList.toggle("hidden", !isLoading);
+    authSubmitLoading.classList.toggle("inline-flex", isLoading);
+  } else {
+    authSubmitButton.textContent = isLoading ? "Signing in" : "Sign in";
+  }
+}
+
 async function signIn() {
   hideAuthError();
-  authSubmitButton.disabled = true;
-  const original = authSubmitButton.textContent;
-  authSubmitButton.textContent = "Signing in";
+  setAuthSubmitState(true);
   try {
     const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
@@ -729,8 +1011,7 @@ async function signIn() {
   } catch (error) {
     showAuthOverlay(error.message || "Sign-in failed.");
   } finally {
-    authSubmitButton.disabled = false;
-    authSubmitButton.textContent = original;
+    setAuthSubmitState(false);
   }
 }
 
@@ -766,6 +1047,938 @@ async function readApiPayload(response) {
   };
 }
 
+async function loadDemoSamples() {
+  if (!demoSampleGrid) {
+    return;
+  }
+  try {
+    const response = await apiFetch(`${API_BASE}/api/demo-samples`);
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Demo samples could not be loaded.");
+    }
+    demoSamples = Array.isArray(payload) ? payload : [];
+    renderDemoSampleCards();
+    renderDemoSampleSummary(selectedDemoSample());
+  } catch (error) {
+    demoSamples = [];
+    demoSampleGrid.innerHTML = '<div class="demo-sample-empty">Samples unavailable.</div>';
+    if (demoSampleSummary) {
+      demoSampleSummary.textContent = error.message || "Demo samples could not be loaded.";
+    }
+  }
+}
+
+function renderDemoSampleCards() {
+  if (!demoSampleGrid) {
+    return;
+  }
+  const signature = JSON.stringify({
+    mode: window.CloudBridgeModernUI?.renderDemoSamples ? "modern" : "native",
+    selectedDemoSampleId,
+    canAssess: hasPermission("can_assess"),
+    samples: demoSamples.map((sample) => [sample.id, sample.title, sample.image_url]),
+  });
+  if (signature === demoSampleRenderSignature) {
+    return;
+  }
+  demoSampleRenderSignature = signature;
+  if (window.CloudBridgeModernUI?.renderDemoSamples) {
+    window.CloudBridgeModernUI.renderDemoSamples(demoSampleGrid, {
+      samples: demoSamples,
+      selectedId: selectedDemoSampleId,
+      apiBase: API_BASE,
+      canSelect: hasPermission("can_assess"),
+      onSelect: async (sampleId) => {
+        if (!hasPermission("can_assess")) {
+          showToast("Your role cannot load samples or edit assessments.", "error");
+          return;
+        }
+        await applyDemoSample(sampleId);
+      },
+    });
+    return;
+  }
+  if (!demoSamples.length) {
+    demoSampleGrid.innerHTML = '<div class="demo-sample-empty">No bundled samples found.</div>';
+    return;
+  }
+  demoSampleGrid.innerHTML = demoSamples
+    .map(
+      (sample) => `
+        <button type="button" class="demo-sample-card ${sample.id === selectedDemoSampleId ? "active" : ""}" data-demo-sample-id="${escapeAttribute(sample.id)}">
+          <span class="demo-thumb"><img src="${escapeAttribute(API_BASE + (sample.image_url || ""))}" alt="" loading="lazy" /></span>
+          <span class="demo-card-copy">
+            <span class="demo-card-route">${providerLogoLockup(sample.source_provider, { compact: true })}<i></i>${providerLogoLockup(sample.target_provider, { compact: true })}</span>
+            <strong>${escapeHtml(sample.title)}</strong>
+            <small>${escapeHtml(sample.pattern_label)}</small>
+            <span>${escapeHtml((sample.goals || []).slice(0, 3).join(", "))}</span>
+          </span>
+        </button>
+      `,
+    )
+    .join("");
+}
+
+function selectedDemoSample() {
+  return demoSamples.find((sample) => sample.id === selectedDemoSampleId) || null;
+}
+
+function renderDemoSampleSummary(sample) {
+  if (!demoSampleSummary) {
+    return;
+  }
+  if (!sample) {
+    demoSampleSummary.textContent = "Select a sample.";
+    return;
+  }
+  demoSampleSummary.innerHTML = `
+    <strong>${escapeHtml(sample.pattern_label || sample.title)}</strong>
+    <span>${escapeHtml(sample.route_label)} | ${escapeHtml((sample.goals || []).join(", "))}</span>
+  `;
+}
+
+async function applyDemoSample(sampleId) {
+  const sample = demoSamples.find((item) => item.id === sampleId);
+  if (!sample) {
+    return;
+  }
+  selectedDemoSampleId = sample.id;
+  demoSampleRenderSignature = "";
+  renderDemoSampleCards();
+  renderDemoSampleSummary(sample);
+  demoSampleGrid?.setAttribute("aria-busy", "true");
+  hideError();
+  try {
+    const response = await apiFetch(`${API_BASE}${sample.image_url || `/api/demo-samples/${sample.id}/image`}`);
+    if (!response.ok) {
+      const payload = await readApiPayload(response);
+      throw new Error(payload.detail || "Demo sample image could not be loaded.");
+    }
+    const blob = await response.blob();
+    const file = new File([blob], sample.filename, {
+      type: blob.type || "image/png",
+      lastModified: Date.now(),
+    });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    fileInput.files = transfer.files;
+    setFilePreview(file);
+    sourceProvider.value = sample.source_provider || "auto";
+    targetProvider.value = sample.target_provider || "aws";
+    goalsInput.value = (sample.goals || []).join(", ");
+    migrationIntent.value = sample.migration_intent || "";
+    setSelectValue(architectureVariant, sample.architecture_variant || "balanced");
+    setSelectValue(architecturePattern, sample.architecture_pattern || "auto");
+    architecturePattern?.closest("details")?.setAttribute("open", "");
+    if (projectNameInput) {
+      projectNameInput.value = sample.title || "";
+      reviewState.projectName = projectNameInput.value;
+    }
+    syncPresetStates();
+    syncProviderRouteBadges();
+    setProviderTheme({
+      source_architecture: { provider: sample.source_provider },
+      target_architecture: { provider: sample.target_provider },
+    });
+    syncAppFrame();
+    syncRunReadiness();
+    setActiveIntakeStep(1);
+    showToast(`${sample.title} loaded.`, "success");
+  } catch (error) {
+    showError(error.message || "Demo sample could not be loaded.");
+  } finally {
+    demoSampleGrid?.removeAttribute("aria-busy");
+  }
+}
+
+function setSelectValue(select, value) {
+  if (!select) {
+    return;
+  }
+  const hasOption = Array.from(select.options).some((option) => option.value === value);
+  select.value = hasOption ? value : select.options[0]?.value || "";
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+  syncArchitectureSelectControl(select);
+}
+
+function setActiveIntakeStep(step) {
+  const maxStep = Math.max(0, Math.max(...intakeStepPanels.map((panel) => Number(panel.dataset.intakeStep || 0))));
+  const nextStep = clamp(Number(step), 0, maxStep);
+  if (nextStep > activeIntakeStep && !canAdvanceFromIntakeStep(activeIntakeStep)) {
+    return;
+  }
+  activeIntakeStep = nextStep;
+  intakeStepPanels.forEach((panel) => {
+    panel.classList.toggle("active", Number(panel.dataset.intakeStep || 0) === activeIntakeStep);
+  });
+  wizardButtons.forEach((button) => {
+    const target = Number(button.dataset.wizardTarget || 0);
+    button.classList.toggle("active", target === activeIntakeStep);
+    button.classList.toggle("complete", target < activeIntakeStep);
+    if (target === activeIntakeStep) {
+      button.setAttribute("aria-current", "step");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
+  if (wizardBackButton) {
+    wizardBackButton.disabled = activeIntakeStep === 0 || !hasPermission("can_assess");
+  }
+  if (wizardNextButton) {
+    wizardNextButton.hidden = activeIntakeStep >= maxStep;
+    wizardNextButton.disabled = !hasPermission("can_assess");
+  }
+  syncRunReadiness();
+}
+
+function canAdvanceFromIntakeStep(step) {
+  if (step === 0 && !fileInput.files?.[0]) {
+    showToast("Choose a sample or upload an architecture diagram first.", "error");
+    return false;
+  }
+  if (step === 2 && !migrationIntent.value.trim() && !goalsInput.value.trim()) {
+    showToast("Add migration intent or goals before the final review step.", "error");
+    return false;
+  }
+  return true;
+}
+
+function syncRunReadiness() {
+  const card = document.querySelector("#runReadinessCard");
+  if (!card) {
+    return;
+  }
+  const file = fileInput.files?.[0];
+  const goals = parseGoals(goalsInput.value);
+  const route = `${formatProvider(sourceProvider.value || "auto")} to ${formatProvider(targetProvider.value || "aws")}`;
+  const signature = JSON.stringify({
+    file: file ? [file.name, file.size, file.lastModified] : null,
+    goals,
+    route,
+    intent: migrationIntent.value.trim(),
+  });
+  if (signature === runReadinessSignature) {
+    return;
+  }
+  runReadinessSignature = signature;
+  const items = [
+    {
+      label: "Diagram",
+      value: file ? file.name : "Not selected",
+      ready: Boolean(file),
+    },
+    {
+      label: "Route",
+      value: route,
+      ready: Boolean(sourceProvider.value && targetProvider.value),
+    },
+    {
+      label: "Intent",
+      value: migrationIntent.value.trim() || "Needs migration intent",
+      ready: Boolean(migrationIntent.value.trim()),
+    },
+    {
+      label: "Goals",
+      value: goals.length ? goals.join(", ") : "Optional",
+      ready: true,
+    },
+  ];
+  const allReady = items.every((item) => item.ready);
+  card.innerHTML = `
+    <div class="run-status-banner ${allReady ? "ready" : "missing"}">
+      <span class="run-status-icon" aria-hidden="true">${runStatusIcon(allReady)}</span>
+      <div>
+        <strong>${allReady ? "Ready to run enterprise assessment" : "Complete the intake before running"}</strong>
+        <small>${
+          allReady
+            ? "The assessment will use this diagram, route, intent, and goal set to generate mappings, risks, target design, and report outputs."
+            : "Add the missing intake details before moving this assessment into generation."
+        }</small>
+      </div>
+    </div>
+    <div class="run-readiness-list">
+      ${items
+        .map(
+          (item) => `
+            <article class="run-summary-card ${item.ready ? "ready" : "missing"}">
+              <span class="run-summary-icon" aria-hidden="true">${runSummaryIcon(item.label)}</span>
+              <span class="run-summary-label">${escapeHtml(item.label)}</span>
+              <strong class="run-summary-value">${escapeHtml(item.value)}</strong>
+            </article>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function runStatusIcon(ready) {
+  if (ready) {
+    return `
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 8v5" />
+      <path d="M12 17h.01" />
+      <path d="M10.3 4.3a2 2 0 0 1 3.4 0l7.1 12.5a2 2 0 0 1-1.7 3H4.9a2 2 0 0 1-1.7-3l7.1-12.5Z" />
+    </svg>
+  `;
+}
+
+function runSummaryIcon(label) {
+  const key = String(label || "").toLowerCase();
+  if (key === "diagram") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7 3.5h7l3 3v14H7v-17Z" />
+        <path d="M14 3.5v4h4" />
+        <path d="M9.5 12h5" />
+        <path d="M9.5 15.5h4" />
+      </svg>
+    `;
+  }
+  if (key === "route") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M4 7h13" />
+        <path d="m14 4 3 3-3 3" />
+        <path d="M20 17H7" />
+        <path d="m10 14-3 3 3 3" />
+      </svg>
+    `;
+  }
+  if (key === "intent") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5 4.5h14v15H5v-15Z" />
+        <path d="M8 9h8" />
+        <path d="M8 12.5h8" />
+        <path d="M8 16h5" />
+      </svg>
+    `;
+  }
+  return `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 21a9 9 0 1 0-9-9" />
+      <path d="M12 17a5 5 0 1 0-5-5" />
+      <path d="M12 13a1 1 0 1 0-1-1" />
+      <path d="M3 21l6-6" />
+    </svg>
+  `;
+}
+
+function renderAssessmentDashboard() {
+  if (!assessmentDashboard) {
+    return;
+  }
+  const history = loadHistory();
+  const reports = buildDashboardReports(history);
+  const currentReadiness = latestResult?.assessment_insights?.scores?.overall_readiness?.value;
+  const currentVerdict = latestResult?.final_verdict?.recommendation || "not_run";
+  const currentTarget = latestResult?.target_architecture?.provider || targetProvider.value || "aws";
+  const currentTitle = projectNameInput?.value?.trim() || (latestResult ? buildHistoryTitle(latestResult) : "No assessment selected");
+  const total = reports.length;
+  const needsReview = reports.filter((item) => ["needs_review", "ai_draft"].includes(item.status || "ai_draft")).length;
+  const approved = reports.filter((item) => item.status === "approved").length;
+  const readinessValues = reports
+    .map((item) => item.result?.assessment_insights?.scores?.overall_readiness?.value)
+    .filter((value) => Number.isFinite(Number(value)))
+    .map(Number);
+  const avgReadiness = readinessValues.length
+    ? Math.round(readinessValues.reduce((sum, value) => sum + value, 0) / readinessValues.length)
+    : latestResult?.assessment_insights?.scores?.overall_readiness?.value || 0;
+  const signature = JSON.stringify({
+    mode: window.CloudBridgeModernUI?.renderDashboard ? "modern" : "native",
+    user: currentUser ? [currentUser.display_name, currentUser.primary_role] : null,
+    currentTitle,
+    currentReadiness,
+    currentVerdict,
+    currentTarget,
+    reviewStatus: reviewState.status,
+    selectedHistoryId,
+    reports: reports.slice(0, 8).map((item) => [
+      item.id,
+      item.title,
+      item.status,
+      item.reviewer,
+      item.last_modified_at,
+      item.result?.assessment_insights?.scores?.overall_readiness?.value,
+    ]),
+    total,
+    needsReview,
+    approved,
+    avgReadiness,
+  });
+  if (signature === dashboardRenderSignature) {
+    return;
+  }
+  dashboardRenderSignature = signature;
+  if (window.CloudBridgeModernUI?.renderDashboard) {
+    window.CloudBridgeModernUI.renderDashboard(assessmentDashboard, {
+      current: {
+        title: currentTitle,
+        subtitle: latestResult ? formatVerdict(currentVerdict) : "Pick a sample to start",
+        target: currentTarget,
+        readiness: Number.isFinite(Number(currentReadiness)) ? `${Math.round(Number(currentReadiness))}%` : "Ready",
+        readinessLabel: Number.isFinite(Number(currentReadiness)) ? "readiness" : "not run",
+      },
+      kpis: [
+        { label: "Reports", value: total, detail: "Generated" },
+        { label: "Review", value: needsReview, detail: "Open" },
+        { label: "Approved", value: approved, detail: "Ready" },
+        { label: "Readiness", value: `${avgReadiness}%`, detail: "Avg" },
+      ],
+      rows: reports.slice(0, 8).map((item) => {
+        const readiness = item.result?.assessment_insights?.scores?.overall_readiness?.value;
+        return {
+          id: item.id,
+          title: `${item.isCurrent ? "Current: " : ""}${item.title || "Migration assessment"}`,
+          status: workflowLabel(item.status || "ai_draft"),
+          reviewer: item.reviewer || "Unassigned reviewer",
+          owner: `${item.decisionOwner ? `Owner: ${item.decisionOwner}` : "Owner not assigned"}${
+            item.approvalTargetDate ? ` | Due ${item.approvalTargetDate}` : ""
+          }`,
+          target: item.result?.target_architecture?.provider || item.target_provider || "aws",
+          readiness: Number.isFinite(Number(readiness)) ? `${Math.round(Number(readiness))}%` : "N/A",
+          updated: formatDate(item.last_modified_at || item.created_at),
+        };
+      }),
+      onOpen: openDashboardReport,
+      onCompare: compareDashboardReport,
+      onReview: () => setReviewRailCollapsed(false),
+      onNavigate: openLastReportFromDashboard,
+      onSignOut: signOut,
+      session: currentUser
+        ? {
+            name: currentUser.display_name,
+            role: roleLabel(currentUser.primary_role),
+          }
+        : null,
+    });
+    return;
+  }
+  const recentRows = reports.slice(0, 8).map((item) => renderDashboardHistoryRow(item)).join("");
+  assessmentDashboard.innerHTML = `
+    <section class="dashboard-hero">
+      <div>
+        <p class="eyebrow">Current Assessment</p>
+        <h3>${escapeHtml(currentTitle)}</h3>
+        <span>${latestResult ? escapeHtml(formatVerdict(currentVerdict)) : "Choose a sample or upload a diagram to start"}</span>
+      </div>
+      <div class="dashboard-hero-route">
+        ${providerLogoLockup(currentTarget, { compact: true })}
+        <strong>${Number.isFinite(Number(currentReadiness)) ? `${Math.round(Number(currentReadiness))}%` : "Ready"}</strong>
+        <small>${Number.isFinite(Number(currentReadiness)) ? "readiness" : "not run"}</small>
+      </div>
+    </section>
+    <div class="dashboard-command-header">
+      <div>
+        <p class="eyebrow">Assessment Command Center</p>
+        <h3>Portfolio Snapshot</h3>
+      </div>
+      <div class="dashboard-command-actions">
+        <button type="button" class="diagram-link" id="dashboardOpenCurrentButton">Open Report</button>
+        <button type="button" class="diagram-link" id="dashboardOpenReviewButton">Review Rail</button>
+      </div>
+    </div>
+    <div class="dashboard-kpi-grid">
+      ${renderDashboardKpi("Reports", total, "Generated report history")}
+      ${renderDashboardKpi("Needs Review", needsReview, "Drafts or gated assessments")}
+      ${renderDashboardKpi("Approved", approved, "Ready for planning")}
+      ${renderDashboardKpi("Avg Readiness", `${avgReadiness}%`, "Report history average")}
+    </div>
+    <div class="dashboard-recent">
+      <div class="dashboard-recent-header">
+        <strong>Recent Assessments</strong>
+        <span>Status, reviewer, target cloud, readiness, and quick actions</span>
+      </div>
+      ${
+        recentRows ||
+        `<div class="dashboard-empty">
+          <strong>No reports yet.</strong>
+          <span>Run an assessment to populate the report dashboard.</span>
+        </div>`
+      }
+    </div>
+  `;
+  document.querySelector("#dashboardOpenCurrentButton")?.addEventListener("click", openLastReportFromDashboard);
+  document.querySelector("#dashboardOpenReviewButton")?.addEventListener("click", () => setReviewRailCollapsed(false));
+}
+
+function buildDashboardReports(history) {
+  if (!latestResult) {
+    return history;
+  }
+  const existing = selectedHistoryId ? history.find((item) => item.id === selectedHistoryId) : null;
+  const title = projectNameInput.value.trim() || existing?.title || buildHistoryTitle(latestResult);
+  const currentRecord = {
+    ...(existing || {}),
+    id: existing?.id || "__current_report",
+    isCurrent: true,
+    enterpriseId: existing?.enterpriseId || selectedEnterpriseAssessmentId || null,
+    created_at: existing?.created_at || new Date().toISOString(),
+    last_modified_at: new Date().toISOString(),
+    title,
+    projectName: title,
+    reviewer: reviewerNameInput.value.trim() || existing?.reviewer || "",
+    decisionOwner: decisionOwnerInput?.value.trim() || existing?.decisionOwner || "",
+    approvalTargetDate: approvalTargetDateInput?.value || existing?.approvalTargetDate || "",
+    reviewed: reviewState.reviewed,
+    notes: architectNotes.value,
+    comments: reviewComments.value,
+    sectionComments: reviewState.sectionComments || {},
+    evidence: reviewState.evidence || {},
+    status: reviewState.status,
+    variant: architectureVariant.value,
+    pattern: architecturePattern.value,
+    source_provider: sourceProvider.value,
+    target_provider: targetProvider.value,
+    goals: goalsInput.value,
+    result: latestResult,
+  };
+  return [currentRecord, ...history.filter((item) => item.id !== currentRecord.id)];
+}
+
+function openLastReportFromDashboard() {
+  if (latestResult) {
+    renderResult(latestResult);
+    enterAssessmentWorkspace("overview");
+    return;
+  }
+  const [latestReport] = loadHistory();
+  if (latestReport) {
+    openHistoryItem(latestReport.id);
+    return;
+  }
+  showToast("Run an assessment first, then the report opens from here.", "error");
+}
+
+function openDashboardReport(id) {
+  if (id === "__current_report") {
+    openLastReportFromDashboard();
+    return;
+  }
+  openHistoryItem(id);
+}
+
+async function compareDashboardReport(id) {
+  await compareHistoryItem(id);
+}
+
+function resolveComparisonPair(id) {
+  const reports = buildDashboardReports(loadHistory()).filter((item) => item?.result);
+  if (reports.length < 2) {
+    return {
+      error: "Run or save at least two assessments before comparing.",
+    };
+  }
+  const selected = reports.find((item) => item.id === id) || reports[0];
+  const current = reports.find((item) => item.isCurrent) || reports[0];
+  if (selected.id === current.id) {
+    const baseline = reports.find((item) => item.id !== current.id);
+    return baseline
+      ? { baseline, current }
+      : { error: "No previous assessment is available for comparison." };
+  }
+  return {
+    baseline: selected,
+    current,
+  };
+}
+
+function comparisonRequestItem(record, role) {
+  return {
+    title: String(record.title || "Migration assessment").replace(/^Current:\s*/i, ""),
+    status: workflowLabel(record.status || "ai_draft"),
+    reviewer: record.reviewer || null,
+    updated_at: record.last_modified_at || record.created_at || null,
+    assessment: record.result,
+    metadata: {
+      role,
+      local_id: record.id,
+      enterprise_id: record.enterpriseId || null,
+      version: record.version || null,
+      goals: record.goals || "",
+      architecture_variant: record.variant || "",
+      architecture_pattern: record.pattern || "",
+      decision_owner: record.decisionOwner || "",
+      approval_target_date: record.approvalTargetDate || "",
+      is_current: Boolean(record.isCurrent),
+    },
+  };
+}
+
+async function runAssessmentComparison(pair) {
+  if (!pair?.baseline || !pair?.current) {
+    showToast(pair?.error || "Choose two assessments to compare.", "error");
+    return;
+  }
+  openComparisonDrawer(pair);
+  renderComparisonLoading(pair);
+  try {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "compare_assessments",
+        baseline: comparisonRequestItem(pair.baseline, "baseline"),
+        current: comparisonRequestItem(pair.current, "current"),
+        focus: "Enterprise architecture review comparison with business impact, technical deltas, risks, governance actions, and next steps.",
+      }),
+    });
+    const payload = await readApiPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.detail || "Assessment comparison failed.");
+    }
+    renderAssessmentComparison(payload, pair);
+    renderComparisonReviewSignal(payload, pair);
+    showToast(comparisonToastMessage(payload), "success");
+  } catch (error) {
+    renderComparisonError(error.message || "Assessment comparison failed.", pair);
+    showToast(error.message || "Assessment comparison failed.", "error");
+  }
+}
+
+function openComparisonDrawer(pair) {
+  if (!assessmentCompareDialog) {
+    return;
+  }
+  if (assessmentCompareSubtitle) {
+    assessmentCompareSubtitle.textContent = `${pair.baseline.title || "Baseline"} compared with ${pair.current.title || "Current assessment"}`;
+  }
+  assessmentCompareDialog.hidden = false;
+  document.body.classList.add("compare-open");
+}
+
+function closeComparisonDrawer() {
+  if (!assessmentCompareDialog) {
+    return;
+  }
+  assessmentCompareDialog.hidden = true;
+  document.body.classList.remove("compare-open");
+}
+
+function renderComparisonLoading(pair) {
+  latestComparisonBrief = "";
+  if (!assessmentCompareContent) {
+    return;
+  }
+  assessmentCompareContent.innerHTML = `
+    <section class="compare-loading-card">
+      <div class="compare-loading-orb" aria-hidden="true"></div>
+      <div>
+        <p class="eyebrow">Generating Comparison</p>
+        <h3>Comparing architecture assessments</h3>
+        <span>${escapeHtml(pair.baseline.title || "Baseline")} to ${escapeHtml(pair.current.title || "Current assessment")}</span>
+      </div>
+      <div class="compare-loading-grid" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+    </section>
+  `;
+}
+
+function renderAssessmentComparison(comparison, pair) {
+  if (!assessmentCompareContent) {
+    return;
+  }
+  const delta = Number(comparison.readiness_delta || 0);
+  const deltaLabel = delta > 0 ? `+${delta}` : String(delta);
+  latestComparisonBrief = buildComparisonBrief(comparison, pair);
+  assessmentCompareContent.innerHTML = `
+    <section class="compare-hero-card">
+      <div>
+        <p class="eyebrow">${escapeHtml(comparisonSourceLabel(comparison))}</p>
+        <h3>${escapeHtml(comparison.decision || "Comparison generated")}</h3>
+        <p>${escapeHtml(comparison.executive_summary || "No summary returned.")}</p>
+      </div>
+      <div class="compare-confidence">
+        <span>Confidence</span>
+        <strong>${Math.round(Number(comparison.comparison_confidence || 0) * 100)}%</strong>
+        <small>${escapeHtml(comparisonModelLabel(comparison))}</small>
+      </div>
+    </section>
+
+    <section class="compare-metric-grid">
+      ${renderComparisonMetric("Baseline readiness", `${comparison.baseline_readiness ?? 0}%`, pair.baseline?.title || "Baseline")}
+      ${renderComparisonMetric("Current readiness", `${comparison.current_readiness ?? 0}%`, pair.current?.title || "Current")}
+      ${renderComparisonMetric("Readiness delta", `${deltaLabel} pts`, delta > 0 ? "Improved" : delta < 0 ? "Declined" : "Stable", delta > 0 ? "good" : delta < 0 ? "warn" : "")}
+      ${renderComparisonMetric("Verdict movement", comparison.verdict_delta || "No verdict movement", "Decision signal")}
+    </section>
+
+    <section class="compare-route-card">
+      ${renderComparisonRouteSide("Baseline", pair.baseline)}
+      <span class="compare-route-arrow">vs</span>
+      ${renderComparisonRouteSide("Current", pair.current)}
+    </section>
+
+    ${renderComparisonListSection("Business Impact", comparison.business_impact)}
+    ${renderComparisonDeltaSection("Architecture Deltas", comparison.architecture_deltas)}
+    ${renderComparisonDeltaSection("Mapping Deltas", comparison.mapping_deltas)}
+    ${renderComparisonDeltaSection("Risk Deltas", comparison.risk_deltas)}
+    <section class="compare-two-column">
+      ${renderComparisonListSection("Governance Actions", comparison.governance_actions)}
+      ${renderComparisonListSection("Recommended Next Steps", comparison.recommended_next_steps)}
+    </section>
+    ${renderComparisonListSection("Assumptions", comparison.assumptions, "muted")}
+  `;
+}
+
+function comparisonSourceLabel(comparison) {
+  if (comparison?.source === "llm") {
+    return "LLM Generated";
+  }
+  if (comparison?.source === "llm_fallback") {
+    return "LLM Fallback";
+  }
+  return "Deterministic Baseline";
+}
+
+function comparisonModelLabel(comparison) {
+  const model = String(comparison?.model_used || "").trim();
+  if (model) {
+    if (comparison?.source === "llm_fallback") {
+      const fallbackMatch = model.match(/^(.*?)\s+fallback\s*\(\s*([^)]+)\s*\)\s*$/i);
+      const cleaned = (fallbackMatch?.[1] || model)
+        .replace(/\s+unavailable:?\s*TimeoutError/i, "")
+        .trim();
+      const reason = String(fallbackMatch?.[2] || "").toLowerCase();
+      if (reason.includes("timeout")) {
+        return `${cleaned || "LLM"} timed out; local comparison used`;
+      }
+      if (reason.includes("json")) {
+        return `${cleaned || "LLM"} returned invalid JSON; local comparison used`;
+      }
+      return `${cleaned || "LLM"} fallback used; local comparison generated`;
+    }
+    return model;
+  }
+  return comparison?.source === "offline" ? "Local comparison engine" : "Comparison engine";
+}
+
+function comparisonToastMessage(comparison) {
+  if (comparison?.source === "llm") {
+    return "AI comparison generated.";
+  }
+  if (comparison?.source === "llm_fallback") {
+    const model = String(comparison?.model_used || "");
+    if (/json/i.test(model)) {
+      return "Comparison generated locally because the LLM response was not valid JSON.";
+    }
+    if (/timeout/i.test(model)) {
+      return "Comparison generated with local fallback after the LLM did not complete in time.";
+    }
+    return "Comparison generated with local fallback after the LLM response could not be used.";
+  }
+  return "Comparison generated with local comparison engine.";
+}
+
+function renderComparisonMetric(label, value, detail, tone = "") {
+  return `
+    <article class="compare-metric ${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </article>
+  `;
+}
+
+function renderComparisonRouteSide(label, record) {
+  const result = record?.result || {};
+  const source = result.source_architecture?.provider || record?.source_provider || "auto";
+  const target = result.target_architecture?.provider || record?.target_provider || "aws";
+  const readiness = result.assessment_insights?.scores?.overall_readiness?.value;
+  return `
+    <article>
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(record?.title || "Migration assessment").replace(/^Current:\s*/i, ""))}</strong>
+      <div class="compare-provider-row">
+        ${providerLogoLockup(source, { compact: true })}
+        <i></i>
+        ${providerLogoLockup(target, { compact: true })}
+      </div>
+      <small>${Number.isFinite(Number(readiness)) ? `${Math.round(Number(readiness))}% readiness` : "Readiness unavailable"}</small>
+    </article>
+  `;
+}
+
+function renderComparisonListSection(title, items, tone = "") {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  return `
+    <section class="compare-section ${tone}">
+      <div class="compare-section-title">
+        <h4>${escapeHtml(title)}</h4>
+        <span>${values.length}</span>
+      </div>
+      ${
+        values.length
+          ? `<ul>${values.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+          : '<p class="compare-empty">No items returned for this section.</p>'
+      }
+    </section>
+  `;
+}
+
+function renderComparisonDeltaSection(title, deltas) {
+  const values = Array.isArray(deltas) ? deltas : [];
+  return `
+    <section class="compare-section">
+      <div class="compare-section-title">
+        <h4>${escapeHtml(title)}</h4>
+        <span>${values.length}</span>
+      </div>
+      ${
+        values.length
+          ? `<div class="compare-delta-grid">${values.map((delta) => renderComparisonDeltaCard(delta)).join("")}</div>`
+          : '<p class="compare-empty">No material deltas returned for this area.</p>'
+      }
+    </section>
+  `;
+}
+
+function renderComparisonDeltaCard(delta) {
+  const priority = String(delta.priority || "medium").toLowerCase();
+  return `
+    <article class="compare-delta-card ${escapeAttribute(priority)}">
+      <div>
+        <strong>${escapeHtml(delta.area || "Assessment delta")}</strong>
+        <span>${escapeHtml(priority)} priority</span>
+      </div>
+      <dl>
+        <dt>Baseline</dt>
+        <dd>${escapeHtml(delta.baseline || "Not available")}</dd>
+        <dt>Current</dt>
+        <dd>${escapeHtml(delta.current || "Not available")}</dd>
+        <dt>Impact</dt>
+        <dd>${escapeHtml(delta.impact || "Review required.")}</dd>
+      </dl>
+      <small>Owner: ${escapeHtml(delta.owner || "Architecture review board")}</small>
+    </article>
+  `;
+}
+
+function renderComparisonError(message, pair) {
+  latestComparisonBrief = "";
+  if (!assessmentCompareContent) {
+    return;
+  }
+  assessmentCompareContent.innerHTML = `
+    <section class="compare-error-card">
+      <p class="eyebrow">Compare Failed</p>
+      <h3>Could not generate the assessment comparison</h3>
+      <p>${escapeHtml(message)}</p>
+      <button type="button" data-dashboard-action="compare" data-dashboard-id="${escapeAttribute(pair?.baseline?.id || "")}">Retry Compare</button>
+    </section>
+  `;
+}
+
+function renderComparisonReviewSignal(comparison, pair) {
+  if (!reviewNotes) {
+    return;
+  }
+  reviewNotes.innerHTML = `
+    <div class="rail-list">
+      <strong>AI Comparison Ready</strong>
+      <ul>
+        <li>${escapeHtml(comparison.decision || "Review comparison output.")}</li>
+        <li>Readiness: ${escapeHtml(pair.baseline.title || "Baseline")} ${comparison.baseline_readiness}% to ${escapeHtml(pair.current.title || "Current")} ${comparison.current_readiness}%</li>
+        <li>Source: ${escapeHtml(comparison.source || "offline")} | Model: ${escapeHtml(comparison.model_used || "offline")}</li>
+      </ul>
+    </div>
+  `;
+}
+
+async function copyComparisonBrief(button) {
+  if (!latestComparisonBrief) {
+    showToast("Generate a comparison first.", "error");
+    return;
+  }
+  await navigator.clipboard.writeText(latestComparisonBrief);
+  pulseButton(button, "Copied");
+}
+
+function buildComparisonBrief(comparison, pair) {
+  const lines = [
+    `# CloudBridge IQ Assessment Comparison`,
+    "",
+    `Baseline: ${pair.baseline.title || "Baseline"}`,
+    `Current: ${pair.current.title || "Current"}`,
+    `Decision: ${comparison.decision || "Review required"}`,
+    `Readiness: ${comparison.baseline_readiness}% to ${comparison.current_readiness}% (${comparison.readiness_delta > 0 ? "+" : ""}${comparison.readiness_delta} pts)`,
+    `Verdict: ${comparison.verdict_delta || "No verdict movement"}`,
+    `Source: ${comparison.source || "offline"} (${comparison.model_used || "offline"})`,
+    "",
+    `## Executive Summary`,
+    comparison.executive_summary || "No summary returned.",
+    "",
+    ...briefList("Business Impact", comparison.business_impact),
+    ...briefDeltas("Architecture Deltas", comparison.architecture_deltas),
+    ...briefDeltas("Mapping Deltas", comparison.mapping_deltas),
+    ...briefDeltas("Risk Deltas", comparison.risk_deltas),
+    ...briefList("Governance Actions", comparison.governance_actions),
+    ...briefList("Recommended Next Steps", comparison.recommended_next_steps),
+  ];
+  return lines.join("\n");
+}
+
+function briefList(title, items) {
+  const values = Array.isArray(items) ? items.filter(Boolean) : [];
+  return [`## ${title}`, ...(values.length ? values.map((item) => `- ${item}`) : ["- None returned."]), ""];
+}
+
+function briefDeltas(title, deltas) {
+  const values = Array.isArray(deltas) ? deltas.filter(Boolean) : [];
+  return [
+    `## ${title}`,
+    ...(values.length
+      ? values.map((delta) => `- ${delta.area}: ${delta.baseline} -> ${delta.current}. Impact: ${delta.impact}`)
+      : ["- No material deltas returned."]),
+    "",
+  ];
+}
+
+function renderDashboardKpi(label, value, detail) {
+  return `
+    <section class="dashboard-kpi">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </section>
+  `;
+}
+
+function renderDashboardHistoryRow(item) {
+  const readiness = item.result?.assessment_insights?.scores?.overall_readiness?.value;
+  const target = item.result?.target_architecture?.provider || item.target_provider || "aws";
+  return `
+    <article class="dashboard-row">
+      <div>
+        <strong>${escapeHtml(`${item.isCurrent ? "Current: " : ""}${item.title || "Migration assessment"}`)}</strong>
+        <span>${escapeHtml(workflowLabel(item.status || "ai_draft"))} | ${escapeHtml(item.reviewer || "Unassigned reviewer")}</span>
+        <span>${escapeHtml(item.decisionOwner ? `Owner: ${item.decisionOwner}` : "Owner not assigned")}${item.approvalTargetDate ? ` | Due ${escapeHtml(item.approvalTargetDate)}` : ""}</span>
+      </div>
+      <div>${providerLogoLockup(target, { compact: true })}</div>
+      <div>
+        <span>Readiness</span>
+        <strong>${Number.isFinite(Number(readiness)) ? `${Math.round(Number(readiness))}%` : "N/A"}</strong>
+      </div>
+      <div>
+        <span>Updated</span>
+        <strong>${escapeHtml(formatDate(item.last_modified_at || item.created_at))}</strong>
+      </div>
+      <div class="dashboard-row-actions">
+        <button type="button" data-dashboard-action="open" data-dashboard-id="${escapeAttribute(item.id)}">Open</button>
+        <button type="button" data-dashboard-action="compare" data-dashboard-id="${escapeAttribute(item.id)}">Compare</button>
+      </div>
+    </article>
+  `;
+}
+
 function compactServerMessage(value) {
   const text = String(value || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -784,6 +1997,7 @@ function showAuthOverlay(message = "") {
   document.body.classList.add("auth-locked");
   if (authOverlay) {
     authOverlay.hidden = false;
+    authOverlay.scrollTop = 0;
   }
   if (message) {
     showAuthError(message);
@@ -802,6 +2016,7 @@ function showAuthError(message) {
   if (!authError) {
     return;
   }
+  markAuthFieldError(message);
   authError.textContent = message;
   authError.hidden = false;
 }
@@ -812,6 +2027,25 @@ function hideAuthError() {
   }
   authError.textContent = "";
   authError.hidden = true;
+  clearAuthFieldErrors();
+}
+
+function markAuthFieldError(message) {
+  clearAuthFieldErrors();
+  const text = String(message || "").toLowerCase();
+  if (text.includes("password")) {
+    authAdminPassword?.classList.add("auth-input-error");
+    return;
+  }
+  if (!authDisplayName?.value?.trim() || text.includes("name")) {
+    authDisplayName?.classList.add("auth-input-error");
+  }
+}
+
+function clearAuthFieldErrors() {
+  [authDisplayName, authEmail, authRequestedRole, authAdminPassword].forEach((control) => {
+    control?.classList.remove("auth-input-error");
+  });
 }
 
 function hasPermission(permission) {
@@ -823,6 +2057,7 @@ function applyRoleUi() {
   if (!signedIn) {
     showAuthOverlay();
   } else {
+    setAuthTheme("light");
     hideAuthOverlay();
   }
 
@@ -851,10 +2086,11 @@ function applyRoleUi() {
   });
   submitButton.disabled = !canAssess || document.body.classList.contains("is-loading-assessment");
   submitButton.title = canAssess ? "" : "Viewer access cannot run assessments.";
+  setActiveIntakeStep(activeIntakeStep);
 
   saveAssessmentButton.disabled = !latestResult || !canReview;
   markReviewedButton.disabled = !latestResult || !canArchitectReview;
-  markReviewedButton.title = canArchitectReview ? "" : "Only Aryan or an architect can mark architect review.";
+  markReviewedButton.title = canArchitectReview ? "" : "Only an admin or architect can mark architect review.";
   workflowStatus.disabled = !canArchitectReview;
   architectNotes.disabled = !canArchitectReview;
   reviewerNameInput.disabled = !canReview;
@@ -870,6 +2106,8 @@ function applyRoleUi() {
 
   document.body.dataset.userRole = signedIn ? currentUser.primary_role : "anonymous";
   document.body.classList.toggle("role-restricted", signedIn && !canArchitectReview);
+  renderDemoSampleCards();
+  renderAssessmentDashboard();
 }
 
 function roleLabel(role) {
@@ -887,9 +2125,14 @@ function setFilePreview(file) {
     URL.revokeObjectURL(latestPreviewUrl);
     latestPreviewUrl = null;
   }
+  previewPanState = null;
+  previewFrame.classList.remove("is-pannable", "is-dragging");
+  previewFrame.removeAttribute("tabindex");
+  previewFrame.removeAttribute("aria-label");
+  previewFrame.removeAttribute("title");
 
   if (!file) {
-    fileMeta.textContent = "PNG, JPG, WEBP, GIF, BMP, or PDF";
+    fileMeta.textContent = "or click to upload - PNG, JPG, WEBP, GIF, BMP, or PDF";
     previewFrame.innerHTML = '<div class="preview-empty">No diagram selected</div>';
     return;
   }
@@ -897,7 +2140,22 @@ function setFilePreview(file) {
   fileMeta.textContent = `${file.name} (${formatBytes(file.size)})`;
   if (file.type.startsWith("image/")) {
     latestPreviewUrl = URL.createObjectURL(file);
-    previewFrame.innerHTML = `<img src="${latestPreviewUrl}" alt="Uploaded architecture diagram preview" />`;
+    previewFrame.classList.add("is-pannable");
+    previewFrame.tabIndex = 0;
+    previewFrame.setAttribute("aria-label", "Selected diagram preview. Drag to pan across the image.");
+    previewFrame.setAttribute("title", "Drag to pan across the diagram");
+    previewFrame.scrollLeft = 0;
+    previewFrame.scrollTop = 0;
+    previewFrame.innerHTML = `
+      <div class="preview-pan-surface">
+        <img
+          class="preview-pan-image"
+          src="${latestPreviewUrl}"
+          alt="Uploaded architecture diagram preview"
+          draggable="false"
+        />
+      </div>
+    `;
     return;
   }
 
@@ -910,9 +2168,13 @@ function setFilePreview(file) {
 }
 
 function renderResult(payload) {
+  currentResultRenderToken += 1;
+  diagramAssetsRenderToken = 0;
+  reportAssetsRenderToken = 0;
   setProviderTheme(payload);
   syncProviderRouteBadges(payload);
   selectedCanvasComponentId = payload.target_architecture?.components?.[0]?.id || null;
+  renderAssessmentDashboard();
   renderSummary(payload);
   renderAnalysisMeta(payload.analysis_metadata || {});
   renderQualityGates(payload);
@@ -928,16 +2190,36 @@ function renderResult(payload) {
   injectReportProviderBrand(reportPanel, payload);
   injectGeneratedDiagramIntoReport(reportPanel, payload);
   renderReviewPanel(payload);
-  renderReportMermaidBlocks(reportPanel);
-  renderMermaidDiagram(payload.mermaid_diagram || "");
-  renderDiagramImage(payload);
   updateDiagramControls();
-  updateCanvasLayers();
   syncZoomControls();
   resetAgentChat(payload);
   setViewMode(viewMode);
   toggleIntakePanel(true);
   applyRoleUi();
+  ensureAssetsForActiveTabs("overview");
+}
+
+function enterDashboardMode() {
+  document.body.classList.add("dashboard-mode");
+  document.body.classList.remove("workspace-mode");
+  toggleIntakePanel(false);
+  setReviewRailCollapsed(true);
+  if (resultTitle) {
+    resultTitle.textContent = "Dashboard";
+  }
+  renderAssessmentDashboard();
+  syncSnapshotCondensed();
+}
+
+function enterAssessmentWorkspace(tabName = "overview") {
+  document.body.classList.remove("dashboard-mode");
+  document.body.classList.add("workspace-mode");
+  toggleIntakePanel(true);
+  if (resultTitle && latestResult) {
+    resultTitle.textContent = selectedHistoryId ? "Saved Assessment" : "Assessment";
+  }
+  activateTab(tabName);
+  syncSnapshotCondensed();
 }
 
 function resetAgentChat(payload = latestResult) {
@@ -1002,7 +2284,7 @@ async function askMigrationAgent() {
         assessment: latestResult,
         chat_history: agentChatHistory.slice(-10),
         active_tab: document.querySelector(".tab.active")?.dataset.tab || "overview",
-        reviewer_notes: [architectNotes.value, reviewComments.value].filter(Boolean).join("\n"),
+        reviewer_notes: [architectNotes?.value, reviewComments?.value].filter(Boolean).join("\n"),
       }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -1318,7 +2600,7 @@ function toggleIntakePanel(forceCollapsed = undefined) {
       : !appShell?.classList.contains("intake-collapsed");
   appShell?.classList.toggle("intake-collapsed", collapsed);
   if (toggleIntakeButton) {
-    toggleIntakeButton.textContent = collapsed ? "Show Intake" : "Intake";
+    toggleIntakeButton.textContent = "Dashboard";
     toggleIntakeButton.setAttribute("aria-expanded", String(!collapsed));
   }
   if (collapseIntakeButton) {
@@ -1468,7 +2750,21 @@ function refreshReviewStatusViews(payload = latestResult) {
 
 function syncSnapshotCondensed() {
   const shouldCondense = Boolean(latestResult) && window.scrollY > 180 && window.innerWidth > 760;
+  if (snapshotCondensedState === shouldCondense) {
+    return;
+  }
+  snapshotCondensedState = shouldCondense;
   document.body.classList.toggle("snapshot-condensed", shouldCondense);
+}
+
+function requestSnapshotCondensedSync() {
+  if (snapshotFrameRequest) {
+    return;
+  }
+  snapshotFrameRequest = window.requestAnimationFrame(() => {
+    snapshotFrameRequest = 0;
+    syncSnapshotCondensed();
+  });
 }
 
 function renderOverview(payload) {
@@ -1607,6 +2903,7 @@ function renderMappings(mappings) {
               ${renderMiniPie(Math.round((mapping.confidence || 0) * 100), mappingConfidenceStatus(mapping.confidence || 0))}
               <span>${Math.round((mapping.confidence || 0) * 100)}%</span>
             </div>
+            ${renderMappingReviewFlag(mapping)}
           </td>
           <td>${renderTags((mapping.alternatives || []).slice(0, 3))}</td>
           <td>${escapeHtml(mapping.reasoning)}</td>
@@ -1669,6 +2966,77 @@ function renderMappings(mappings) {
   `;
 }
 
+function renderMappingReviewFlag(mapping) {
+  const confidence = Number(mapping.confidence || 0);
+  if (confidence < 0.65) {
+    return '<span class="review-flag high">Architect review required</span>';
+  }
+  if (confidence < 0.82) {
+    return '<span class="review-flag medium">Validate mapping</span>';
+  }
+  return '<span class="review-flag good">Ready for review</span>';
+}
+
+function renderArchitectureComparison(payload) {
+  const source = payload.source_architecture || {};
+  const target = payload.target_architecture || {};
+  const mappings = payload.service_mappings || [];
+  const riskyMappings = mappings.filter((mapping) => Number(mapping.confidence || 0) < 0.75);
+  return `
+    <div class="architecture-compare">
+      <div class="diagram-section-header">
+        <div>
+          <p class="eyebrow">Source To Target</p>
+          <h3>${formatProvider(source.provider || sourceProvider.value)} architecture compared with ${formatProvider(target.provider || targetProvider.value)}</h3>
+          <p>Use this comparison to explain what changed before opening the generated target diagram.</p>
+        </div>
+        <div class="section-header-actions">
+          <span class="status-badge ${riskyMappings.length ? "watch" : "good"}">${riskyMappings.length} mappings need review</span>
+          <span class="status-badge">${mappings.length} mappings</span>
+        </div>
+      </div>
+      <div class="architecture-compare-grid">
+        ${renderArchitectureCompareColumn("Source", source, source.components || [])}
+        <div class="architecture-compare-bridge">
+          <strong>${mappings.length}</strong>
+          <span>service mappings</span>
+          <small>${riskyMappings.length ? `${riskyMappings.length} below confidence threshold` : "No low-confidence mappings"}</small>
+        </div>
+        ${renderArchitectureCompareColumn("Target", target, target.components || [])}
+      </div>
+    </div>
+  `;
+}
+
+function renderArchitectureCompareColumn(label, architecture, components) {
+  const visibleComponents = components.slice(0, 7);
+  return `
+    <section class="architecture-compare-column">
+      <div class="architecture-compare-title">
+        <span>${escapeHtml(label)}</span>
+        ${providerLogoLockup(architecture.provider || "unknown", { compact: true })}
+      </div>
+      <p>${escapeHtml(architecture.summary || "Architecture summary unavailable.")}</p>
+      <div class="compare-component-list">
+        ${
+          visibleComponents.length
+            ? visibleComponents
+                .map(
+                  (component) => `
+                    <span class="${Number(component.confidence || 0) < 0.7 ? "needs-review" : ""}">
+                      <b>${escapeHtml(component.name)}</b>
+                      ${escapeHtml(component.service_type || component.category || "service")}
+                    </span>
+                  `,
+                )
+                .join("")
+            : '<span>No components detected</span>'
+        }
+      </div>
+    </section>
+  `;
+}
+
 function renderDiagram(payload) {
   const mermaid = normalizeMermaidSource(payload.mermaid_diagram || "");
   const targetComponents = payload.target_architecture?.components || [];
@@ -1709,6 +3077,9 @@ function renderDiagram(payload) {
           <button type="button" data-canvas-zoom="150">150%</button>
           <button type="button" data-canvas-zoom="300">300%</button>
         </div>
+      </section>
+      <section class="diagram-section">
+        ${renderArchitectureComparison(payload)}
       </section>
       <section class="diagram-section">
         <div class="diagram-section-header">
@@ -3386,6 +4757,7 @@ function renderSupportedProviders() {
 function syncProviderRouteBadges(payload = latestResult) {
   const source = payload?.source_architecture?.provider || sourceProvider.value;
   const target = payload?.target_architecture?.provider || targetProvider.value;
+  syncRouteSelectControls();
   if (providerRouteBadges) {
     providerRouteBadges.innerHTML = providerRouteMarkup(source, target);
   }
@@ -3413,13 +4785,279 @@ function syncAppFrame(payload = latestResult) {
 
 function providerRouteMarkup(sourceProviderName, targetProviderName, options = {}) {
   const compactClass = options.compact ? " compact" : "";
+  const routeTitle = `${formatProvider(sourceProviderName)} to ${formatProvider(targetProviderName)}`;
   return `
-    <div class="provider-route-lockup${compactClass}">
-      ${providerLogoLockup(sourceProviderName, { compact: options.compact })}
-      <span class="provider-route-arrow" aria-hidden="true">→</span>
-      ${providerLogoLockup(targetProviderName, { compact: options.compact })}
+    <div class="provider-route-content${compactClass}">
+      <div class="provider-route-heading">
+        <span>Selected route</span>
+        <strong>${escapeHtml(routeTitle)}</strong>
+      </div>
+      <div class="provider-route-lockup${compactClass}">
+        ${providerLogoLockup(sourceProviderName, { compact: options.compact })}
+        <span class="provider-route-arrow" aria-hidden="true">→</span>
+        ${providerLogoLockup(targetProviderName, { compact: options.compact })}
+      </div>
     </div>
   `;
+}
+
+function enhanceProviderRouteSelects() {
+  [sourceProvider, targetProvider].forEach((select) => {
+    const shell = select?.closest(".route-select-shell");
+    if (!select || !shell || shell.querySelector(".route-custom-select")) {
+      return;
+    }
+    select.classList.add("route-native-select");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+    const control = document.createElement("div");
+    control.className = "route-custom-select";
+    control.dataset.routeSelect = select.id;
+    control.innerHTML = `
+      <button class="route-select-button" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+      <div class="route-select-menu" role="listbox" hidden></div>
+    `;
+    shell.append(control);
+    const button = control.querySelector(".route-select-button");
+    const menu = control.querySelector(".route-select-menu");
+    button?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      closeRouteSelectMenus(control);
+      if (!expanded) {
+        menu.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+      }
+    });
+    button?.addEventListener("keydown", (event) => {
+      if (!["Enter", " ", "ArrowDown"].includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      closeRouteSelectMenus(control);
+      menu.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      menu.querySelector("[aria-selected='true']")?.focus();
+    });
+    menu?.addEventListener("click", (event) => {
+      const option = event.target instanceof Element ? event.target.closest("[data-route-value]") : null;
+      if (!option) {
+        return;
+      }
+      select.value = option.dataset.routeValue || select.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeRouteSelectMenus();
+      syncRouteSelectControl(select);
+    });
+    menu?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeRouteSelectMenus();
+        button?.focus();
+        return;
+      }
+      if (!["Enter", " "].includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      event.target?.click?.();
+    });
+    select.addEventListener("change", () => syncRouteSelectControl(select));
+    syncRouteSelectControl(select);
+  });
+  if (!document.body.dataset.routeSelectOutsideClick) {
+    document.body.dataset.routeSelectOutsideClick = "true";
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest(".route-custom-select")) {
+        return;
+      }
+      closeRouteSelectMenus();
+    });
+  }
+}
+
+function syncRouteSelectControls() {
+  [sourceProvider, targetProvider].forEach((select) => syncRouteSelectControl(select));
+}
+
+function syncRouteSelectControl(select) {
+  if (!select) {
+    return;
+  }
+  const control = document.querySelector(`[data-route-select="${select.id}"]`);
+  if (!control) {
+    return;
+  }
+  const selected = select.selectedOptions?.[0] || select.options[select.selectedIndex];
+  const selectedLabel = selected?.textContent?.trim() || providerShortLabel(select.value);
+  const button = control.querySelector(".route-select-button");
+  const menu = control.querySelector(".route-select-menu");
+  if (button) {
+    button.innerHTML = `
+      ${providerLogoLockup(select.value, { compact: true, label: selectedLabel })}
+      <span class="route-select-chevron" aria-hidden="true"></span>
+    `;
+  }
+  if (menu) {
+    menu.innerHTML = Array.from(select.options)
+      .map((option) => {
+        const selectedState = option.value === select.value;
+        return `
+          <button
+            class="route-select-option"
+            type="button"
+            role="option"
+            data-route-value="${escapeAttribute(option.value)}"
+            aria-selected="${selectedState ? "true" : "false"}"
+          >
+            ${providerLogoLockup(option.value, { compact: true, label: option.textContent.trim() })}
+          </button>
+        `;
+      })
+      .join("");
+  }
+}
+
+function closeRouteSelectMenus(exceptControl = null) {
+  document.querySelectorAll(".route-custom-select").forEach((control) => {
+    if (exceptControl && control === exceptControl) {
+      return;
+    }
+    control.querySelector(".route-select-menu")?.setAttribute("hidden", "");
+    control.querySelector(".route-select-button")?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function enhanceArchitectureSelects() {
+  [architectureVariant, architecturePattern].forEach((select) => {
+    const shell = select?.closest(".architecture-select-shell");
+    if (!select || !shell || shell.querySelector(".architecture-custom-select")) {
+      return;
+    }
+    select.classList.add("architecture-native-select");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+
+    const control = document.createElement("div");
+    control.className = "architecture-custom-select";
+    control.dataset.architectureSelect = select.id;
+    control.innerHTML = `
+      <button class="architecture-select-button" type="button" aria-haspopup="listbox" aria-expanded="false"></button>
+      <div class="architecture-select-menu" role="listbox" hidden></div>
+    `;
+    shell.append(control);
+
+    const button = control.querySelector(".architecture-select-button");
+    const menu = control.querySelector(".architecture-select-menu");
+    button?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      closeArchitectureSelectMenus(control);
+      if (!expanded) {
+        menu.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+      }
+    });
+    button?.addEventListener("keydown", (event) => {
+      if (!["Enter", " ", "ArrowDown"].includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      closeArchitectureSelectMenus(control);
+      menu.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      menu.querySelector("[aria-selected='true']")?.focus();
+    });
+    menu?.addEventListener("click", (event) => {
+      const option = event.target instanceof Element ? event.target.closest("[data-architecture-value]") : null;
+      if (!option) {
+        return;
+      }
+      select.value = option.dataset.architectureValue || select.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeArchitectureSelectMenus();
+      syncArchitectureSelectControl(select);
+    });
+    menu?.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeArchitectureSelectMenus();
+        button?.focus();
+        return;
+      }
+      if (!["Enter", " "].includes(event.key)) {
+        return;
+      }
+      event.preventDefault();
+      event.target?.click?.();
+    });
+    select.addEventListener("change", () => syncArchitectureSelectControl(select));
+    syncArchitectureSelectControl(select);
+  });
+
+  if (!document.body.dataset.architectureSelectOutsideClick) {
+    document.body.dataset.architectureSelectOutsideClick = "true";
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest(".architecture-custom-select")) {
+        return;
+      }
+      closeArchitectureSelectMenus();
+    });
+  }
+}
+
+function syncArchitectureSelectControls() {
+  [architectureVariant, architecturePattern].forEach((select) => syncArchitectureSelectControl(select));
+}
+
+function syncArchitectureSelectControl(select) {
+  if (!select) {
+    return;
+  }
+  const control = document.querySelector(`[data-architecture-select="${select.id}"]`);
+  if (!control) {
+    return;
+  }
+  const selected = select.selectedOptions?.[0] || select.options[select.selectedIndex];
+  const selectedLabel = selected?.textContent?.trim() || "";
+  const eyebrow = select.id === "architectureVariant" ? "Variant" : "Pattern";
+  const button = control.querySelector(".architecture-select-button");
+  const menu = control.querySelector(".architecture-select-menu");
+  if (button) {
+    button.innerHTML = `
+      <span class="architecture-select-current">
+        <small>${eyebrow}</small>
+        <strong>${escapeHtml(selectedLabel)}</strong>
+      </span>
+      <span class="architecture-select-chevron" aria-hidden="true"></span>
+    `;
+  }
+  if (menu) {
+    menu.innerHTML = Array.from(select.options)
+      .map((option) => {
+        const selectedState = option.value === select.value;
+        return `
+          <button
+            class="architecture-select-option"
+            type="button"
+            role="option"
+            data-architecture-value="${escapeAttribute(option.value)}"
+            aria-selected="${selectedState ? "true" : "false"}"
+          >
+            <span>${escapeHtml(option.textContent.trim())}</span>
+          </button>
+        `;
+      })
+      .join("");
+  }
+}
+
+function closeArchitectureSelectMenus(exceptControl = null) {
+  document.querySelectorAll(".architecture-custom-select").forEach((control) => {
+    if (exceptControl && control === exceptControl) {
+      return;
+    }
+    control.querySelector(".architecture-select-menu")?.setAttribute("hidden", "");
+    control.querySelector(".architecture-select-button")?.setAttribute("aria-expanded", "false");
+  });
 }
 
 function providerLogoLockup(provider, options = {}) {
@@ -3452,44 +5090,8 @@ function providerShortLabel(provider) {
 }
 
 function providerLogoSvg(providerKey) {
-  if (providerKey === "aws") {
-    return `
-      <svg class="provider-logo-svg" viewBox="0 0 48 32" aria-hidden="true" focusable="false">
-        <rect x="3" y="5" width="42" height="22" rx="5" fill="#101828"></rect>
-        <path d="M15 17c6 4 15 4 22-1" fill="none" stroke="#ff9900" stroke-width="2.4" stroke-linecap="round"></path>
-        <path d="M35 15l4 .2-2.1 3.2" fill="none" stroke="#ff9900" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
-        <path d="M16 12h5M25 12h7M18 21h13" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"></path>
-      </svg>
-    `;
-  }
-  if (providerKey === "azure") {
-    return `
-      <svg class="provider-logo-svg" viewBox="0 0 48 32" aria-hidden="true" focusable="false">
-        <rect x="3" y="5" width="42" height="22" rx="5" fill="#eef7ff"></rect>
-        <path d="M20 8h8l-8.3 17h-7.2L20 8Z" fill="#0078d4"></path>
-        <path d="M28.7 8 38 25h-9.4l-5.1-6.2L28.7 8Z" fill="#50a7f2"></path>
-        <path d="M19.5 25h18.4l-9.2-5.8-4.9 1.9-4.3 3.9Z" fill="#005ba1"></path>
-      </svg>
-    `;
-  }
-  if (providerKey === "gcp") {
-    return `
-      <svg class="provider-logo-svg" viewBox="0 0 48 32" aria-hidden="true" focusable="false">
-        <rect x="3" y="5" width="42" height="22" rx="5" fill="#ffffff"></rect>
-        <path d="M18.3 23.5h15.2a6 6 0 0 0 1.1-11.9 9.5 9.5 0 0 0-17.7-2.5 7.1 7.1 0 0 0 1.4 14.4Z" fill="none" stroke="#1a73e8" stroke-width="3" stroke-linecap="round"></path>
-        <path d="M17.1 9.1a9.5 9.5 0 0 1 12.3-3.4" fill="none" stroke="#ea4335" stroke-width="3" stroke-linecap="round"></path>
-        <path d="M34.6 11.6a6 6 0 0 1 2.8 10.3" fill="none" stroke="#fbbc04" stroke-width="3" stroke-linecap="round"></path>
-        <path d="M18.3 23.5a7.1 7.1 0 0 1-4.9-12.2" fill="none" stroke="#34a853" stroke-width="3" stroke-linecap="round"></path>
-      </svg>
-    `;
-  }
-  return `
-    <svg class="provider-logo-svg" viewBox="0 0 48 32" aria-hidden="true" focusable="false">
-      <rect x="3" y="5" width="42" height="22" rx="5" fill="#f2f5f8"></rect>
-      <circle cx="18" cy="16" r="6" fill="#94a3b8"></circle>
-      <path d="M27 12h8M27 16h8M27 20h8" stroke="#64748b" stroke-width="2" stroke-linecap="round"></path>
-    </svg>
-  `;
+  const assetKey = ["aws", "azure", "gcp"].includes(providerKey) ? providerKey : "auto";
+  return `<img class="provider-logo-svg" src="assets/provider-${assetKey}.svg" alt="" loading="lazy" />`;
 }
 
 function renderMarkdown(markdown) {
@@ -3604,6 +5206,18 @@ function renderReportMemo(payload) {
   ).length;
   const target = payload.target_architecture?.provider || targetProvider.value;
   return `
+    <section class="report-mode-banner">
+      <div>
+        <p class="eyebrow">Report Mode</p>
+        <strong>Executive decision pack</strong>
+        <span class="architect-only">Architect mode also includes full mappings, assumptions, risks, target design, and implementation detail.</span>
+      </div>
+      <div class="view-toggle inline-mode-toggle" aria-label="Report mode">
+        <button type="button" class="${viewMode === "executive" ? "active" : ""}" data-view-mode="executive">Executive</button>
+        <button type="button" class="${viewMode === "architect" ? "active" : ""}" data-view-mode="architect">Architect</button>
+      </div>
+    </section>
+
     <section class="report-memo-cover">
       <div>
         <p class="eyebrow">Enterprise Decision Memo</p>
@@ -3643,7 +5257,22 @@ function renderReportMemo(payload) {
       ${renderReportDecisionCard("Next Actions", payload.assessment_insights?.review?.suggested_next_actions || [])}
     </section>
 
-    <section class="report-document">
+    <section class="report-architect-pack architect-only">
+      <div class="section-header">
+        <div>
+          <p class="eyebrow">Architect Appendix</p>
+          <h3>Detailed implementation packet</h3>
+        </div>
+      </div>
+      <div class="dashboard-grid">
+        ${renderReportDecisionCard("Assumptions", payload.assumptions || [])}
+        ${renderReportDecisionCard("Required Changes", payload.required_changes || [])}
+        ${renderReportDecisionCard("Implementation Plan", (payload.migration_strategy || []).map((phase) => `${phase.phase}: ${(phase.goals || []).join(", ")}`))}
+        ${renderReportDecisionCard("Risk Mitigations", (payload.risks || []).map((risk) => `${risk.title}: ${risk.mitigation}`))}
+      </div>
+    </section>
+
+    <section class="report-document architect-only">
       ${renderMarkdown(payload.markdown_report || "")}
     </section>
   `;
@@ -3836,6 +5465,8 @@ async function saveCurrentAssessment() {
     title,
     projectName: title,
     reviewer: reviewerNameInput.value.trim(),
+    decisionOwner: decisionOwnerInput?.value.trim() || "",
+    approvalTargetDate: approvalTargetDateInput?.value || "",
     version: selectedHistoryId
       ? history.find((item) => item.id === selectedHistoryId)?.version || existingVersions || 1
       : existingVersions + 1,
@@ -3875,6 +5506,8 @@ async function saveCurrentAssessment() {
           status: reviewState.status,
           notes: architectNotes.value,
           comments: reviewComments.value,
+          decisionOwner: decisionOwnerInput?.value || "",
+          approvalTargetDate: approvalTargetDateInput?.value || "",
           sectionComments: reviewState.sectionComments || {},
           evidence: reviewState.evidence || {},
         },
@@ -3899,6 +5532,45 @@ async function saveCurrentAssessment() {
   }
 }
 
+function rememberCompletedRun() {
+  if (!latestResult) {
+    return;
+  }
+  const history = loadHistory();
+  const title = projectNameInput.value.trim() || buildHistoryTitle(latestResult);
+  const existing = selectedHistoryId ? history.find((item) => item.id === selectedHistoryId) : null;
+  const existingVersions = history.filter((item) => (item.projectName || item.title) === title).length;
+  const record = {
+    id: existing?.id || `assessment_${Date.now()}`,
+    enterpriseId: existing?.enterpriseId || selectedEnterpriseAssessmentId || null,
+    created_at: existing?.created_at || new Date().toISOString(),
+    last_modified_at: new Date().toISOString(),
+    title,
+    projectName: title,
+    reviewer: reviewerNameInput.value.trim(),
+    decisionOwner: decisionOwnerInput?.value.trim() || "",
+    approvalTargetDate: approvalTargetDateInput?.value || "",
+    version: existing?.version || existingVersions + 1,
+    reviewed: reviewState.reviewed,
+    notes: architectNotes.value,
+    comments: reviewComments.value,
+    sectionComments: reviewState.sectionComments || {},
+    evidence: reviewState.evidence || {},
+    status: reviewState.status,
+    variant: architectureVariant.value,
+    pattern: architecturePattern.value,
+    source_provider: sourceProvider.value,
+    target_provider: targetProvider.value,
+    goals: goalsInput.value,
+    result: latestResult,
+  };
+  const withoutExisting = history.filter((item) => item.id !== record.id);
+  persistHistory([record, ...withoutExisting].slice(0, 12));
+  selectedHistoryId = record.id;
+  renderHistory();
+  syncAppFrame();
+}
+
 function openHistoryItem(id) {
   const record = loadHistory().find((item) => item.id === id);
   if (!record) {
@@ -3914,6 +5586,8 @@ function openHistoryItem(id) {
     comments: record.comments || "",
     projectName: record.projectName || record.title || "",
     reviewer: record.reviewer || "",
+    decisionOwner: record.decisionOwner || "",
+    approvalTargetDate: record.approvalTargetDate || "",
     sectionComments: record.sectionComments || {},
     evidence: record.evidence || {},
   };
@@ -3938,32 +5612,17 @@ function openHistoryItem(id) {
   renderResult(latestResult);
   enableActions(true);
   resultTitle.textContent = "Saved Assessment";
-  activateTab("overview");
+  enterAssessmentWorkspace("overview");
   renderHistory();
 }
 
-function compareHistoryItem(id) {
-  const record = loadHistory().find((item) => item.id === id);
-  if (!record || !latestResult) {
+async function compareHistoryItem(id) {
+  const pair = resolveComparisonPair(id);
+  if (pair.error) {
+    showToast(pair.error, "error");
     return;
   }
-  const currentReadiness = latestResult.assessment_insights?.scores?.overall_readiness?.value ?? 0;
-  const savedReadiness = record.result?.assessment_insights?.scores?.overall_readiness?.value ?? 0;
-  const currentMappings = latestResult.service_mappings?.length || 0;
-  const savedMappings = record.result?.service_mappings?.length || 0;
-  const currentVerdict = latestResult.final_verdict?.recommendation || "unknown";
-  const savedVerdict = record.result?.final_verdict?.recommendation || "unknown";
-  reviewNotes.innerHTML = `
-    <div class="rail-list">
-      <strong>Version Compare</strong>
-      <ul>
-        <li>Verdict: ${escapeHtml(formatVerdict(savedVerdict))} to ${escapeHtml(formatVerdict(currentVerdict))}</li>
-        <li>Readiness: ${savedReadiness}/100 to ${currentReadiness}/100</li>
-        <li>Mappings: ${savedMappings} to ${currentMappings}</li>
-        <li>Saved run: ${escapeHtml(formatDate(record.created_at))}</li>
-      </ul>
-    </div>
-  `;
+  await runAssessmentComparison(pair);
 }
 
 function deleteHistoryItem(id) {
@@ -3989,10 +5648,12 @@ function updateSelectedHistoryReviewState() {
       reviewed: reviewState.reviewed,
       status: reviewState.status,
       notes: architectNotes.value,
-      comments: reviewComments.value,
-      projectName: projectNameInput.value,
-      reviewer: reviewerNameInput.value,
-      sectionComments: reviewState.sectionComments || {},
+        comments: reviewComments.value,
+        projectName: projectNameInput.value,
+        reviewer: reviewerNameInput.value,
+        decisionOwner: decisionOwnerInput?.value || "",
+        approvalTargetDate: approvalTargetDateInput?.value || "",
+        sectionComments: reviewState.sectionComments || {},
       evidence: reviewState.evidence || {},
       enterpriseId: selectedEnterpriseAssessmentId || item.enterpriseId || null,
       last_modified_at: new Date().toISOString(),
@@ -4018,6 +5679,8 @@ async function persistReviewStateToSql() {
           status: reviewState.status,
           notes: architectNotes.value,
           comments: reviewComments.value,
+          decisionOwner: decisionOwnerInput?.value || "",
+          approvalTargetDate: approvalTargetDateInput?.value || "",
           sectionComments: reviewState.sectionComments || {},
           evidence: reviewState.evidence || {},
         },
@@ -4036,6 +5699,7 @@ function renderHistory() {
   const history = loadHistory();
   if (!history.length) {
     historyList.innerHTML = '<div class="empty-state">No saved assessments yet.</div>';
+    renderAssessmentDashboard();
     return;
   }
   historyList.innerHTML = history
@@ -4046,6 +5710,7 @@ function renderHistory() {
             <strong>${escapeHtml(item.title || "Migration assessment")}</strong>
             <span>v${escapeHtml(item.version || 1)} | ${escapeHtml(workflowLabel(item.status || "ai_draft"))}</span>
             <span>${escapeHtml(item.reviewer || "Unassigned reviewer")} | modified ${escapeHtml(formatDate(item.last_modified_at || item.created_at))}</span>
+            <span>${escapeHtml(item.decisionOwner || "No decision owner")}${item.approvalTargetDate ? ` | target ${escapeHtml(item.approvalTargetDate)}` : ""}</span>
           </div>
           <div class="history-actions">
             <button type="button" data-history-action="open" data-history-id="${escapeAttribute(item.id)}">Open</button>
@@ -4056,6 +5721,7 @@ function renderHistory() {
       `,
     )
     .join("");
+  renderAssessmentDashboard();
 }
 
 function gateItemKey(label, index = 0) {
@@ -4152,6 +5818,12 @@ function syncReviewMetadataInputs() {
   reviewComments.value = reviewState.comments || "";
   projectNameInput.value = reviewState.projectName || "";
   reviewerNameInput.value = reviewState.reviewer || "";
+  if (decisionOwnerInput) {
+    decisionOwnerInput.value = reviewState.decisionOwner || "";
+  }
+  if (approvalTargetDateInput) {
+    approvalTargetDateInput.value = reviewState.approvalTargetDate || "";
+  }
 }
 
 function loadHistory() {
@@ -4187,6 +5859,12 @@ function buildExportMarkdown() {
   }
   if (reviewerNameInput.value.trim()) {
     additions.push(`- **Reviewer:** ${reviewerNameInput.value.trim()}`);
+  }
+  if (decisionOwnerInput?.value.trim()) {
+    additions.push(`- **Decision owner:** ${decisionOwnerInput.value.trim()}`);
+  }
+  if (approvalTargetDateInput?.value) {
+    additions.push(`- **Approval target date:** ${approvalTargetDateInput.value}`);
   }
   additions.push(`- **Review status:** ${workflowLabel(reviewState.status)}`);
   additions.push(`- **Architecture variant:** ${formatTitle(architectureVariant.value)}`);
@@ -4254,7 +5932,9 @@ function toggleGoalPreset(goal) {
 function syncPresetStates() {
   const goals = parseGoals(goalsInput.value).map((goal) => goal.toLowerCase());
   document.querySelectorAll(".preset-button").forEach((button) => {
-    button.classList.toggle("active", goals.includes((button.dataset.goal || "").toLowerCase()));
+    const active = goals.includes((button.dataset.goal || "").toLowerCase());
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
   });
 }
 
@@ -4300,27 +5980,112 @@ function inlineMarkdown(value) {
 }
 
 function activateTab(tabName) {
+  const panelNames = resolveTabPanels(tabName);
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.classList.toggle("active", tab.dataset.tab === tabName);
+    tab.classList.toggle("active", tabMatches(tab.dataset.tab, tabName, panelNames));
   });
   document.querySelectorAll("[data-navigate-tab]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.navigateTab === tabName);
+    button.classList.toggle("active", tabMatches(button.dataset.navigateTab, tabName, panelNames));
   });
   document.querySelectorAll(".tab-panel").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `${tabName}Panel`);
+    panel.classList.toggle("active", panelNames.some((name) => panel.id === `${name}Panel`));
   });
+  ensureAssetsForActiveTabs(tabName);
+}
+
+function ensureAssetsForActiveTabs(tabName) {
+  if (!latestResult) {
+    return;
+  }
+  const panelNames = resolveTabPanels(tabName);
+  const token = currentResultRenderToken;
+  if (panelNames.includes("diagram") && diagramAssetsRenderToken !== token) {
+    diagramAssetsRenderToken = token;
+    scheduleIdleWork(async () => {
+      if (token !== currentResultRenderToken || !latestResult) {
+        return;
+      }
+      await renderMermaidDiagram(latestResult.mermaid_diagram || "");
+      if (token !== currentResultRenderToken || !latestResult) {
+        return;
+      }
+      await renderDiagramImage(latestResult);
+      updateDiagramControls();
+      updateCanvasLayers();
+      syncZoomControls();
+    });
+  }
+  if (panelNames.includes("report") && reportAssetsRenderToken !== token) {
+    reportAssetsRenderToken = token;
+    scheduleIdleWork(async () => {
+      if (token !== currentResultRenderToken || !latestResult) {
+        return;
+      }
+      renderReportMermaidBlocks(reportPanel);
+      await renderDiagramImage(latestResult);
+    });
+  }
+}
+
+function scheduleIdleWork(callback) {
+  const run = () => {
+    try {
+      Promise.resolve(callback()).catch((error) => {
+        console.warn("Deferred UI work skipped:", error);
+      });
+    } catch (error) {
+      console.warn("Deferred UI work skipped:", error);
+    }
+  };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(run, { timeout: 900 });
+    return;
+  }
+  window.setTimeout(run, 32);
+}
+
+function resolveTabPanels(tabName) {
+  return TAB_GROUPS[tabName] || [tabName || "overview"];
+}
+
+function tabMatches(candidate, activeTab, activePanels) {
+  if (!candidate) {
+    return false;
+  }
+  if (candidate === activeTab) {
+    return true;
+  }
+  const candidatePanels = resolveTabPanels(candidate);
+  return candidatePanels.some((name) => activePanels.includes(name));
 }
 
 function setLoading(isLoading) {
   loadingState.hidden = !isLoading;
   document.body.classList.toggle("is-loading-assessment", isLoading);
   submitButton.disabled = isLoading || !hasPermission("can_assess");
-  submitButton.textContent = isLoading ? "Running Assessment" : "Run Assessment";
+  submitButton.setAttribute("aria-busy", String(isLoading));
+  const idleLabel = submitButton.querySelector(".run-submit-idle");
+  const loadingLabel = submitButton.querySelector(".run-submit-loading");
+  if (idleLabel && loadingLabel) {
+    idleLabel.hidden = isLoading;
+    loadingLabel.hidden = !isLoading;
+  } else {
+    submitButton.textContent = isLoading ? "Running Assessment" : "Run Assessment";
+  }
   applyRoleUi();
 }
 
 function showError(message) {
-  errorState.textContent = message;
+  errorState.innerHTML = `
+    <div class="error-card">
+      <strong>Assessment needs attention</strong>
+      <p>${escapeHtml(message)}</p>
+      <div class="error-actions">
+        <button type="button" data-retry-assessment ${fileInput.files?.[0] ? "" : "disabled"}>Retry</button>
+        <button type="button" data-navigate-tab="overview">Review Inputs</button>
+      </div>
+    </div>
+  `;
   errorState.hidden = false;
   showToast(message, "error");
 }

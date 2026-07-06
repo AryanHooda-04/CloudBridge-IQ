@@ -1,6 +1,7 @@
 # CloudBridge IQ Sample Architecture Diagrams
 
 Use these PNGs to exercise different assessment paths. Upload one diagram in the UI, then set the suggested source/target route and intent.
+The local UI demo launcher reads `metadata.json` in this folder to load these presets without manual file selection.
 
 | File | Best Route | Pattern To Expect | Suggested Intent |
 |---|---|---|---|
