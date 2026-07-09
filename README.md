@@ -136,6 +136,55 @@ https://<your-render-service>.onrender.com
 
 Render free services can sleep after inactivity, so the first request after idle may take longer.
 
+## Embedded Citrix Validator Bridge
+
+CloudBridge IQ also exposes a small machine-to-machine validator bridge for the Citrix Test Automation Runner. It is mounted under `/validator` so the runner can reuse this already-approved Render hostname instead of calling OpenAI directly from HCL laptops.
+
+Endpoints:
+
+- `GET /validator/health`
+- `GET /validator/probe`
+- `GET /validator/check`
+- `POST /validator/validate`
+- `POST /validator/evaluate`
+
+Required Render environment variables:
+
+```env
+OPENAI_API_KEY=your_openai_api_key
+VALIDATOR_TOKEN=generate_a_long_random_value
+```
+
+Optional validator settings:
+
+```env
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_TIMEOUT_SEC=90
+OPENAI_RETRY_ATTEMPTS=3
+MAX_IMAGE_BYTES=8388608
+```
+
+Smoke-test from PowerShell:
+
+```powershell
+curl.exe --ssl-no-revoke https://cloudbridge-iq.onrender.com/validator/health
+curl.exe --ssl-no-revoke -H "Authorization: Bearer YOUR_VALIDATOR_TOKEN" https://cloudbridge-iq.onrender.com/validator/probe
+```
+
+Citrix Runner bridge configuration:
+
+```json
+"ai_validation": {
+  "enabled": true,
+  "mode": "bridge",
+  "bridge_url": "https://cloudbridge-iq.onrender.com/validator",
+  "bridge_health_path": "/health",
+  "bridge_test_path": "/probe"
+}
+```
+
+The desktop app still sends only validation requests and screenshot payloads to this bridge. The OpenAI key remains configured on Render and is not shared with colleagues' laptops.
+
 ### Optional Blueprint Deploy
 
 The included `render.yaml` can also be used as a Render Blueprint. It defines a free Docker web service, health check path, and required secret placeholders.

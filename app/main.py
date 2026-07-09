@@ -45,6 +45,7 @@ from app.schemas import (
     SsoReadinessResponse,
     SourceArchitecture,
 )
+from app.validator_bridge import router as validator_router
 from app.services.auth import (
     SESSION_COOKIE_NAME,
     authenticate_user,
@@ -116,6 +117,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(validator_router, prefix="/validator")
 
 
 @app.middleware("http")

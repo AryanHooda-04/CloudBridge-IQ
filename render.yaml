@@ -23,5 +23,15 @@ services:
         value: admin
       - key: OPENAI_API_KEY
         sync: false
+      - key: VALIDATOR_TOKEN
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_TIMEOUT_SEC
+        value: "90"
+      - key: OPENAI_RETRY_ATTEMPTS
+        value: "3"
+      - key: MAX_IMAGE_BYTES
+        value: "8388608"
       - key: AUTH_SECRET_KEY
         generateValue: true
