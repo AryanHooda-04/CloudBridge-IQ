@@ -323,16 +323,6 @@ document.querySelectorAll(".preset-button").forEach((button) => {
   });
 });
 
-document.querySelectorAll("[data-agent-prompt]").forEach((button) => {
-  button.addEventListener("click", () => {
-    if (!agentChatInput) {
-      return;
-    }
-    agentChatInput.value = button.dataset.agentPrompt || "";
-    agentChatInput.focus();
-  });
-});
-
 agentChatForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await askMigrationAgent();
@@ -357,10 +347,7 @@ document.addEventListener("click", async (event) => {
 
   const agentPrompt = event.target.closest("[data-agent-prompt]");
   if (agentPrompt) {
-    if (agentChatInput) {
-      agentChatInput.value = agentPrompt.dataset.agentPrompt || "";
-      agentChatInput.focus();
-    }
+    openAgentPrompt(agentPrompt.dataset.agentPrompt || "", agentPrompt);
     return;
   }
 
@@ -396,6 +383,8 @@ document.addEventListener("click", async (event) => {
       openDashboardReport(id);
     } else if (dashboardButton.dataset.dashboardAction === "compare") {
       await compareDashboardReport(id);
+    } else if (dashboardButton.dataset.dashboardAction === "delete") {
+      await deleteDashboardReport(id);
     } else if (dashboardButton.dataset.dashboardAction === "all") {
       enterDashboardMode({ focusReports: true });
     }
@@ -465,7 +454,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "compare") {
       await compareHistoryItem(id);
     } else if (action === "delete") {
-      deleteHistoryItem(id);
+      await deleteHistoryItem(id);
     }
     return;
   }
@@ -885,34 +874,7 @@ downloadPdfButton.addEventListener("click", async () => {
   const original = downloadPdfButton.textContent;
   downloadPdfButton.textContent = "Building";
   try {
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 120000);
-    const response = await apiFetch(`${API_BASE}/api/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        action: "report_pdf",
-        filename: "migration-assessment.pdf",
-        markdown_report: buildExportMarkdown(),
-        source_provider: latestResult.source_architecture?.provider || sourceProvider.value,
-        target_provider: latestResult.target_architecture?.provider || targetProvider.value,
-        target_architecture: latestResult.target_architecture,
-        include_rendered_diagram: true,
-        include_mermaid_diagram: false,
-        mermaid_diagram_png_base64: null,
-      }),
-    }).finally(() => window.clearTimeout(timeoutId));
-    if (!response.ok) {
-      let detail = "PDF generation failed.";
-      try {
-        const payload = await readApiPayload(response);
-        detail = payload.detail || detail;
-      } catch {
-        detail = response.statusText || detail;
-      }
-      throw new Error(detail);
-    }
+    const response = await requestPdfReport({ includeRenderedDiagram: true });
     const blob = await readExpectedBlob(response, "application/pdf", "PDF generation failed.");
     const saved = await downloadBlob("migration-assessment.pdf", blob);
     if (saved) {
@@ -929,6 +891,55 @@ downloadPdfButton.addEventListener("click", async () => {
     downloadPdfButton.textContent = original;
   }
 });
+
+async function requestPdfReport({ includeRenderedDiagram }) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 120000);
+  const basePayload = {
+    action: "report_pdf",
+    filename: "migration-assessment.pdf",
+    markdown_report: buildExportMarkdown(),
+    source_provider: latestResult.source_architecture?.provider || sourceProvider.value,
+    target_provider: latestResult.target_architecture?.provider || targetProvider.value,
+    include_rendered_diagram: includeRenderedDiagram,
+    include_mermaid_diagram: false,
+    mermaid_diagram_png_base64: null,
+  };
+  if (includeRenderedDiagram && latestResult.target_architecture) {
+    basePayload.target_architecture = latestResult.target_architecture;
+  }
+  try {
+    const response = await apiFetch(`${API_BASE}/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify(basePayload),
+    });
+    if (response.ok) {
+      return response;
+    }
+    const detail = await pdfErrorDetail(response);
+    if (includeRenderedDiagram) {
+      const fallbackResponse = await requestPdfReport({ includeRenderedDiagram: false });
+      showToast("PDF generated without the optional rendered diagram.", "info");
+      return fallbackResponse;
+    }
+    throw new Error(detail);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function pdfErrorDetail(response) {
+  let detail = "PDF generation failed.";
+  try {
+    const payload = await readApiPayload(response);
+    detail = payload.detail || detail;
+  } catch {
+    detail = response.statusText || detail;
+  }
+  return detail;
+}
 
 downloadDiagramButton.addEventListener("click", async () => {
   if (!latestResult?.target_architecture) {
@@ -1601,10 +1612,12 @@ function renderAssessmentDashboard() {
           target: item.result?.target_architecture?.provider || item.target_provider || "aws",
           readiness: Number.isFinite(Number(readiness)) ? `${Math.round(Number(readiness))}%` : "N/A",
           updated: formatDate(item.last_modified_at || item.created_at),
+          canDelete: hasPermission("can_review") && item.id !== "__current_report",
         };
       }),
       onOpen: openDashboardReport,
       onCompare: compareDashboardReport,
+      onDelete: deleteDashboardReport,
       onReview: () => setReviewRailCollapsed(false),
       onNavigate: openLastReportFromDashboard,
       onShowAll: () => enterDashboardMode({ focusReports: true }),
@@ -1958,6 +1971,10 @@ function openDashboardReport(id) {
 
 async function compareDashboardReport(id) {
   await compareHistoryItem(id);
+}
+
+async function deleteDashboardReport(id) {
+  await deleteHistoryItem(id);
 }
 
 function resolveComparisonPair(id) {
@@ -2411,6 +2428,11 @@ function renderDashboardHistoryRow(item) {
       <div class="dashboard-row-actions">
         <button type="button" data-dashboard-action="open" data-dashboard-id="${escapeAttribute(item.id)}">Open</button>
         <button type="button" data-dashboard-action="compare" data-dashboard-id="${escapeAttribute(item.id)}">Compare</button>
+        ${
+          hasPermission("can_review") && item.id !== "__current_report"
+            ? `<button type="button" data-dashboard-action="delete" data-dashboard-id="${escapeAttribute(item.id)}">Delete</button>`
+            : ""
+        }
       </div>
     </article>
   `;
@@ -2911,6 +2933,27 @@ function resetAgentChat(payload = latestResult) {
       </div>
     </div>
   `;
+}
+
+function openAgentPrompt(prompt = "", trigger = null) {
+  if (!agentChatInput) {
+    return;
+  }
+
+  const isAlreadyInAgentPanel = trigger?.closest?.("#agentPanel");
+  if (!isAlreadyInAgentPanel) {
+    if (document.body.classList.contains("dashboard-mode") && latestResult) {
+      enterAssessmentWorkspace("agent");
+    } else {
+      activateTab("agent");
+    }
+  }
+
+  agentChatInput.value = prompt;
+  scheduleIdleWork(() => {
+    agentChatInput.scrollIntoView({ behavior: "smooth", block: "center" });
+    agentChatInput.focus({ preventScroll: true });
+  });
 }
 
 async function askMigrationAgent() {
@@ -5713,13 +5756,15 @@ function enhanceArchitectureSelects() {
 
     const button = control.querySelector(".architecture-select-button");
     const menu = control.querySelector(".architecture-select-menu");
+    if (menu) {
+      menu.dataset.architectureMenuFor = select.id;
+    }
     button?.addEventListener("click", (event) => {
       event.stopPropagation();
       const expanded = button.getAttribute("aria-expanded") === "true";
       closeArchitectureSelectMenus(control);
       if (!expanded) {
-        menu.hidden = false;
-        button.setAttribute("aria-expanded", "true");
+        openArchitectureSelectMenu(control);
       }
     });
     button?.addEventListener("keydown", (event) => {
@@ -5728,8 +5773,7 @@ function enhanceArchitectureSelects() {
       }
       event.preventDefault();
       closeArchitectureSelectMenus(control);
-      menu.hidden = false;
-      button.setAttribute("aria-expanded", "true");
+      openArchitectureSelectMenu(control);
       menu.querySelector("[aria-selected='true']")?.focus();
     });
     menu?.addEventListener("click", (event) => {
@@ -5761,12 +5805,95 @@ function enhanceArchitectureSelects() {
   if (!document.body.dataset.architectureSelectOutsideClick) {
     document.body.dataset.architectureSelectOutsideClick = "true";
     document.addEventListener("click", (event) => {
-      if (event.target instanceof Element && event.target.closest(".architecture-custom-select")) {
+      if (
+        event.target instanceof Element &&
+        (event.target.closest(".architecture-custom-select") || event.target.closest(".architecture-select-menu"))
+      ) {
         return;
       }
       closeArchitectureSelectMenus();
     });
+    window.addEventListener("resize", positionOpenArchitectureSelectMenus, { passive: true });
+    window.addEventListener("scroll", positionOpenArchitectureSelectMenus, { passive: true, capture: true });
   }
+}
+
+function openArchitectureSelectMenu(control) {
+  const button = control?.querySelector(".architecture-select-button");
+  const menu = architectureSelectMenuForControl(control);
+  if (!button || !menu) {
+    return;
+  }
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  control.classList.add("open");
+  if (menu.parentElement !== document.body) {
+    document.body.append(menu);
+  }
+  positionArchitectureSelectMenu(control);
+  window.requestAnimationFrame(() => positionArchitectureSelectMenu(control));
+}
+
+function positionOpenArchitectureSelectMenus() {
+  document.querySelectorAll(".architecture-custom-select.open").forEach((control) => {
+    positionArchitectureSelectMenu(control);
+  });
+}
+
+function positionArchitectureSelectMenu(control) {
+  const button = control?.querySelector(".architecture-select-button");
+  const menu = architectureSelectMenuForControl(control);
+  if (!button || !menu || menu.hidden) {
+    return;
+  }
+  const rect = button.getBoundingClientRect();
+  const viewportPadding = 16;
+  const gap = 8;
+  const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+  const left = Math.min(
+    Math.max(viewportPadding, rect.left),
+    Math.max(viewportPadding, window.innerWidth - viewportPadding - width),
+  );
+  const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+  const spaceAbove = rect.top - viewportPadding;
+  const footerRect = document.querySelector(".wizard-controls")?.getBoundingClientRect();
+  const naturalBelowHeight = Math.min(menu.scrollHeight || 280, Math.max(0, spaceBelow - gap));
+  const wouldOverlapWizardControls =
+    footerRect && rect.bottom < footerRect.top && rect.bottom + gap + naturalBelowHeight > footerRect.top;
+  const shouldOpenUp =
+    (spaceBelow < 180 && spaceAbove > spaceBelow) ||
+    (wouldOverlapWizardControls && spaceAbove > 160);
+  const availableHeight = Math.max(
+    160,
+    Math.min(320, (shouldOpenUp ? spaceAbove : spaceBelow) - gap),
+  );
+  const menuHeight = Math.min(menu.scrollHeight || availableHeight, availableHeight);
+  const top = shouldOpenUp
+    ? Math.max(viewportPadding, rect.top - gap - menuHeight)
+    : Math.min(rect.bottom + gap, window.innerHeight - viewportPadding - menuHeight);
+
+  menu.classList.add("floating");
+  menu.classList.toggle("drop-up", shouldOpenUp);
+  menu.style.setProperty("--architecture-menu-left", `${left}px`);
+  menu.style.setProperty("--architecture-menu-top", `${top}px`);
+  menu.style.setProperty("--architecture-menu-width", `${width}px`);
+  menu.style.setProperty("--architecture-menu-max-height", `${availableHeight}px`);
+}
+
+function architectureSelectMenuForControl(control) {
+  if (!control) {
+    return null;
+  }
+  const id = control.dataset.architectureSelect;
+  if (id) {
+    const floatingMenu = Array.from(document.querySelectorAll(".architecture-select-menu")).find(
+      (menu) => menu.dataset.architectureMenuFor === id,
+    );
+    if (floatingMenu) {
+      return floatingMenu;
+    }
+  }
+  return control.querySelector(".architecture-select-menu");
 }
 
 function syncArchitectureSelectControls() {
@@ -5785,7 +5912,7 @@ function syncArchitectureSelectControl(select) {
   const selectedLabel = selected?.textContent?.trim() || "";
   const eyebrow = select.id === "architectureVariant" ? "Variant" : "Pattern";
   const button = control.querySelector(".architecture-select-button");
-  const menu = control.querySelector(".architecture-select-menu");
+  const menu = architectureSelectMenuForControl(control);
   if (button) {
     button.innerHTML = `
       <span class="architecture-select-current">
@@ -5820,7 +5947,14 @@ function closeArchitectureSelectMenus(exceptControl = null) {
     if (exceptControl && control === exceptControl) {
       return;
     }
-    control.querySelector(".architecture-select-menu")?.setAttribute("hidden", "");
+    control.classList.remove("open");
+    const menu = architectureSelectMenuForControl(control);
+    menu?.setAttribute("hidden", "");
+    menu?.classList.remove("floating", "drop-up");
+    menu?.removeAttribute("style");
+    if (menu && menu.parentElement === document.body) {
+      control.append(menu);
+    }
     control.querySelector(".architecture-select-button")?.setAttribute("aria-expanded", "false");
   });
 }
@@ -6420,13 +6554,73 @@ async function compareHistoryItem(id) {
   await runAssessmentComparison(pair);
 }
 
-function deleteHistoryItem(id) {
-  const nextHistory = loadHistory().filter((item) => item.id !== id);
-  persistHistory(nextHistory);
-  if (selectedHistoryId === id) {
-    selectedHistoryId = null;
+async function deleteHistoryItem(id) {
+  if (!hasPermission("can_review")) {
+    showToast("Your role cannot delete reports.", "error");
+    return;
   }
+  if (!id || id === "__current_report") {
+    showToast("Save the current assessment before deleting it from report history.", "error");
+    return;
+  }
+
+  const history = loadHistory();
+  const record = history.find((item) => item.id === id);
+  if (!record) {
+    showToast("Report was not found in history.", "error");
+    renderHistory();
+    return;
+  }
+
+  const title = String(record.title || record.projectName || "this report");
+  const confirmed = window.confirm(`Delete "${title}" from report history? This cannot be undone.`);
+  if (!confirmed) {
+    return;
+  }
+
+  if (record.enterpriseId) {
+    try {
+      const response = await apiFetch(`${API_BASE}/api/assessments/${encodeURIComponent(record.enterpriseId)}`, {
+        method: "DELETE",
+      });
+      const payload = await readApiPayload(response);
+      if (!response.ok && response.status !== 404) {
+        throw new Error(payload.detail || "Report delete failed.");
+      }
+    } catch (error) {
+      showToast(error.message || "Report delete failed.", "error");
+      return;
+    }
+  }
+
+  const nextHistory = history.filter((item) => item.id !== id);
+  persistHistory(nextHistory);
+
+  const lastReport = loadLastReport();
+  if (lastReport?.id === id) {
+    localStorage.removeItem(LAST_REPORT_KEY);
+  }
+
+  const deletingSelectedReport = selectedHistoryId === id;
+  if (deletingSelectedReport) {
+    selectedHistoryId = null;
+    selectedEnterpriseAssessmentId = null;
+    latestResult = null;
+    if (projectNameInput) {
+      projectNameInput.value = "";
+    }
+    enableActions(false);
+    resetAgentChat(null);
+    syncAppFrame(null);
+    enterDashboardMode({ focusReports: true });
+  } else if (record.enterpriseId && selectedEnterpriseAssessmentId === record.enterpriseId) {
+    selectedEnterpriseAssessmentId = null;
+  }
+
+  dashboardRenderSignature = "";
   renderHistory();
+  renderAssessmentDashboard();
+  showToast("Report deleted.", "success");
 }
 
 function updateSelectedHistoryReviewState() {

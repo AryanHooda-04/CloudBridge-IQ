@@ -235,6 +235,32 @@ def get_assessment(
     return AssessmentRecord.model_validate(data)
 
 
+def delete_assessment(
+    assessment_id: str,
+    *,
+    user: AuthUser,
+    settings: Settings | None = None,
+) -> None:
+    initialize_enterprise_store(settings)
+    with _connect(settings) as conn:
+        row = conn.execute(
+            "SELECT title FROM assessments WHERE assessment_id = ?",
+            (assessment_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(assessment_id)
+        _write_audit(
+            conn,
+            assessment_id=assessment_id,
+            user=user,
+            action="assessment.deleted",
+            details={"title": row["title"]},
+        )
+        conn.execute("DELETE FROM evidence_items WHERE assessment_id = ?", (assessment_id,))
+        conn.execute("DELETE FROM cost_models WHERE assessment_id = ?", (assessment_id,))
+        conn.execute("DELETE FROM assessments WHERE assessment_id = ?", (assessment_id,))
+
+
 def update_review_state(
     assessment_id: str,
     request: ReviewStateUpdateRequest,

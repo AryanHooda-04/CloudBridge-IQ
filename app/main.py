@@ -62,6 +62,7 @@ from app.services.aws_diagram_generator import generate_aws_diagram_png
 from app.services.cloud_mapping import map_services
 from app.services.enterprise_store import (
     add_evidence,
+    delete_assessment,
     initialize_enterprise_store,
     list_assessments,
     list_audit_events,
@@ -113,7 +114,7 @@ app.add_middleware(
         "http://localhost:8001",
         "null",
     ],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -353,6 +354,18 @@ async def saved_assessment(
         return load_assessment_record(assessment_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+
+
+@app.delete("/api/assessments/{assessment_id}")
+async def remove_saved_assessment(
+    assessment_id: str,
+    user: AuthUser = Depends(require_permission("can_review")),
+) -> dict[str, str]:
+    try:
+        delete_assessment(assessment_id, user=user)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Assessment not found.") from exc
+    return {"status": "deleted", "assessment_id": assessment_id}
 
 
 @app.post("/api/assessments/{assessment_id}/review", response_model=AssessmentRecord)
@@ -621,8 +634,10 @@ async def _pdf_report_response(request: PdfReportRequest) -> Response:
             )
         except asyncio.TimeoutError:
             rendered_diagram_png = None
-        except RuntimeError as exc:
-            raise HTTPException(status_code=501, detail=str(exc)) from exc
+        except RuntimeError:
+            rendered_diagram_png = None
+        except Exception:
+            rendered_diagram_png = None
     target_provider_for_report = request.target_provider
     if not target_provider_for_report and request.target_architecture is not None:
         target_provider_for_report = request.target_architecture.provider

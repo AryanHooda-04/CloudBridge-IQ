@@ -80,6 +80,8 @@ function Button({ children, variant = "secondary", className = "", ...props }) {
       "border-transparent bg-gradient-to-r from-blue-600 via-sky-600 to-indigo-600 text-white shadow-md shadow-blue-600/20 hover:scale-[1.02] hover:brightness-105 hover:shadow-lg hover:shadow-blue-600/25 active:scale-[0.98]",
     secondary:
       "border-slate-200 bg-white/90 text-slate-700 shadow-sm shadow-slate-950/5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98]",
+    danger:
+      "border-rose-200 bg-rose-50/90 text-rose-700 shadow-sm shadow-rose-950/5 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800 active:scale-[0.98]",
   };
   return (
     <button
@@ -144,7 +146,7 @@ function CurrentAssessmentCard({ current }) {
   );
 }
 
-function AssessmentRow({ row, onOpen, onCompare }) {
+function AssessmentRow({ row, onOpen, onCompare, onDelete }) {
   const readiness = readinessPercent(row.readiness);
   return (
     <article className="group grid gap-4 rounded-2xl border border-slate-200/75 bg-white p-4 shadow-sm shadow-slate-950/5 transition-all duration-200 hover:-translate-y-1 hover:border-sky-200 hover:shadow-lg hover:shadow-sky-900/10 lg:grid-cols-[minmax(260px,1.55fr)_auto_130px_170px_auto] lg:items-center">
@@ -177,6 +179,11 @@ function AssessmentRow({ row, onOpen, onCompare }) {
         <Button className="min-h-8 px-3 py-1.5" data-dashboard-action="compare" data-dashboard-id={row.id} onClick={() => onCompare?.(row.id)}>
           Compare
         </Button>
+        {row.canDelete ? (
+          <Button variant="danger" className="min-h-8 px-3 py-1.5" data-dashboard-action="delete" data-dashboard-id={row.id} onClick={() => onDelete?.(row.id)}>
+            Delete
+          </Button>
+        ) : null}
       </div>
     </article>
   );
@@ -202,6 +209,108 @@ function DashboardRecovery({ lastReport, totalCount, onOpen, onShowAll }) {
   );
 }
 
+function FilterDropdown({ label, value, options = [], onChange }) {
+  const [open, setOpen] = React.useState(false);
+  const controlRef = React.useRef(null);
+  const selected = options.find((option) => option.value === value) || options[0] || { value: "", label: "Select" };
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const closeFromOutside = (event) => {
+      if (controlRef.current && !controlRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", closeFromOutside);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeFromOutside);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const choose = (option) => {
+    onChange?.(option.value);
+    setOpen(false);
+  };
+
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-[11px] font-bold uppercase text-slate-500">{label}</span>
+      <span ref={controlRef} className="relative block">
+        <button
+          type="button"
+          data-dashboard-filter-select={label}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={[
+            "flex h-12 w-full items-center justify-between gap-3 rounded-2xl border bg-white/95 px-4 text-left text-sm font-bold text-slate-800 shadow-sm shadow-sky-950/5 outline-none transition-all duration-200",
+            open
+              ? "border-blue-400 ring-4 ring-blue-500/15"
+              : "border-sky-100 hover:border-sky-300 hover:bg-sky-50/80 hover:shadow-md",
+          ].join(" ")}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {selected.provider ? (
+              <img className="h-4 w-6 shrink-0 object-contain" src={providerIcon(selected.provider)} alt="" loading="lazy" />
+            ) : null}
+            <span className="truncate">{selected.label}</span>
+          </span>
+          <svg
+            className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {open ? (
+          <div
+            role="listbox"
+            className="cloudbridge-filter-menu absolute left-0 right-0 z-50 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-sky-100 bg-white/95 p-1.5 shadow-2xl shadow-sky-950/15 ring-1 ring-white/80 backdrop-blur-xl"
+          >
+            {options.map((option) => {
+              const active = option.value === selected.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={[
+                    "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all duration-150",
+                    active ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-sky-50 hover:text-slate-950",
+                  ].join(" ")}
+                  onClick={() => choose(option)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {option.provider ? (
+                      <img className="h-4 w-6 shrink-0 object-contain" src={providerIcon(option.provider)} alt="" loading="lazy" />
+                    ) : null}
+                    <span className="truncate">{option.label}</span>
+                  </span>
+                  {active ? (
+                    <svg className="h-4 w-4 shrink-0 text-blue-600" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                      <path d="m5 10 3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </span>
+    </label>
+  );
+}
+
 function DashboardFilters({
   filters = {},
   filterOptions = { providers: [], statuses: [] },
@@ -211,6 +320,28 @@ function DashboardFilters({
   onClearFilters,
 }) {
   const change = (key) => (event) => onFilterChange?.(key, event.target.value);
+  const changeValue = (key, value) => onFilterChange?.(key, value);
+  const providerOptions = [
+    { value: "all", label: "All clouds" },
+    ...(filterOptions.providers || []).map((provider) => ({
+      value: provider,
+      label: providerLabel(provider),
+      provider,
+    })),
+  ];
+  const statusOptions = [
+    { value: "all", label: "All statuses" },
+    ...(filterOptions.statuses || []).map((status) => ({
+      value: status,
+      label: status.replace(/_/g, " "),
+    })),
+  ];
+  const sortOptions = [
+    { value: "updated_desc", label: "Newest updated" },
+    { value: "readiness_desc", label: "Readiness high to low" },
+    { value: "readiness_asc", label: "Readiness low to high" },
+    { value: "title_asc", label: "Title A to Z" },
+  ];
   return (
     <section className="grid gap-3 rounded-2xl border border-slate-200/75 bg-white/80 p-4 shadow-sm shadow-slate-950/5 backdrop-blur md:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(150px,0.8fr))_auto] md:items-end">
       <label className="grid gap-1.5">
@@ -222,33 +353,9 @@ function DashboardFilters({
           placeholder="Search reports"
         />
       </label>
-      <label className="grid gap-1.5">
-        <span className="text-[11px] font-bold uppercase text-slate-500">Cloud</span>
-        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.provider || "all"} onChange={change("provider")}>
-          <option value="all">All clouds</option>
-          {(filterOptions.providers || []).map((provider) => (
-            <option key={provider} value={provider}>{providerLabel(provider)}</option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1.5">
-        <span className="text-[11px] font-bold uppercase text-slate-500">Status</span>
-        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.status || "all"} onChange={change("status")}>
-          <option value="all">All statuses</option>
-          {(filterOptions.statuses || []).map((status) => (
-            <option key={status} value={status}>{status.replace(/_/g, " ")}</option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1.5">
-        <span className="text-[11px] font-bold uppercase text-slate-500">Sort</span>
-        <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-500/15" value={filters.sort || "updated_desc"} onChange={change("sort")}>
-          <option value="updated_desc">Newest updated</option>
-          <option value="readiness_desc">Readiness high to low</option>
-          <option value="readiness_asc">Readiness low to high</option>
-          <option value="title_asc">Title A to Z</option>
-        </select>
-      </label>
+      <FilterDropdown label="Cloud" value={filters.provider || "all"} options={providerOptions} onChange={(value) => changeValue("provider", value)} />
+      <FilterDropdown label="Status" value={filters.status || "all"} options={statusOptions} onChange={(value) => changeValue("status", value)} />
+      <FilterDropdown label="Sort" value={filters.sort || "updated_desc"} options={sortOptions} onChange={(value) => changeValue("sort", value)} />
       <div className="flex items-center gap-3 md:justify-end">
         <span className="text-xs font-bold text-slate-500">{resultCount} / {totalCount}</span>
         <Button className="min-h-10 px-3" onClick={onClearFilters}>Reset</Button>
@@ -387,6 +494,7 @@ function Dashboard({
   session = null,
   onOpen,
   onCompare,
+  onDelete,
   onReview,
   onNavigate,
   onShowAll,
@@ -463,7 +571,7 @@ function Dashboard({
             <span className="text-xs font-semibold text-slate-500">{resultCount} of {totalCount} reports shown</span>
           </div>
           {rows.length ? (
-            rows.map((row) => <AssessmentRow key={row.id} row={row} onOpen={onOpen} onCompare={onCompare} />)
+            rows.map((row) => <AssessmentRow key={row.id} row={row} onOpen={onOpen} onCompare={onCompare} onDelete={onDelete} />)
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-8 text-center shadow-inner shadow-white">
               <strong className="block text-sm font-semibold text-slate-950">No reports yet.</strong>

@@ -3,6 +3,8 @@ from io import BytesIO
 from PIL import Image
 from pypdf import PdfReader
 
+from app.main import _pdf_report_response
+from app.schemas import PdfReportRequest, TargetArchitecture
 from app.services.pdf_generator import markdown_to_pdf_bytes
 
 
@@ -87,3 +89,31 @@ def test_pdf_generator_handles_wide_long_tables():
 
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 1000
+
+
+def test_pdf_report_response_skips_optional_diagram_render_failure(monkeypatch):
+    async def run_check():
+        def fail_renderer(_target_architecture):
+            raise RuntimeError("diagram renderer unavailable")
+
+        monkeypatch.setattr("app.main.generate_aws_diagram_png", fail_renderer)
+        response = await _pdf_report_response(
+            PdfReportRequest(
+                filename="fallback.pdf",
+                markdown_report="# Migration Assessment\n\nPDF export should still work.",
+                target_architecture=TargetArchitecture(
+                    provider="aws",
+                    summary="Fallback architecture",
+                    components=[],
+                    relationships=[],
+                ),
+                include_rendered_diagram=True,
+            )
+        )
+
+        assert response.media_type == "application/pdf"
+        assert response.body.startswith(b"%PDF")
+
+    import asyncio
+
+    asyncio.run(run_check())

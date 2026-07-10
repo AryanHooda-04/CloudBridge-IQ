@@ -8465,6 +8465,17 @@ body.auth-locked {
   }
 }
 
+@keyframes dropdownFloatIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (max-width: 640px) {
   .auth-overlay {
     align-items: flex-start;
@@ -9339,7 +9350,12 @@ body.dashboard-mode .architecture-native-select {
 
 body.dashboard-mode .architecture-custom-select {
   position: relative;
+  z-index: 1;
   min-width: 0;
+}
+
+body.dashboard-mode .architecture-custom-select.open {
+  z-index: 120;
 }
 
 body.dashboard-mode .architecture-select-button {
@@ -9422,7 +9438,7 @@ body.dashboard-mode .architecture-select-menu {
   top: calc(100% + 8px);
   right: 0;
   left: 0;
-  z-index: 35;
+  z-index: 120;
   display: grid;
   gap: 6px;
   padding: 8px;
@@ -9430,6 +9446,21 @@ body.dashboard-mode .architecture-select-menu {
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 22px 52px rgba(15, 23, 42, 0.14);
+}
+
+body.dashboard-mode .architecture-select-menu.floating {
+  position: fixed;
+  top: var(--architecture-menu-top);
+  right: auto;
+  left: var(--architecture-menu-left);
+  z-index: 10000;
+  width: var(--architecture-menu-width);
+  max-height: var(--architecture-menu-max-height);
+  animation: dropdownFloatIn 160ms ease both;
+}
+
+body.dashboard-mode .architecture-select-menu.floating.drop-up {
+  transform-origin: bottom;
 }
 
 body.dashboard-mode .architecture-select-menu[hidden] {
@@ -12130,4 +12161,160 @@ body.workspace-mode .start-new-run-button:disabled {
   .agent-send-button {
     width: 100%;
   }
+}
+
+/* Enterprise action buttons for cost model and decision-gate evidence. */
+.cost-calculator-panel [data-cost-model-action="save"],
+.gate-evidence-actions [data-evidence-action="attach"] {
+  position: relative;
+  display: inline-flex;
+  min-width: max-content;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.cost-calculator-panel [data-cost-model-action="save"]::before,
+.gate-evidence-actions [data-evidence-action="attach"]::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent);
+  opacity: 0.24;
+}
+
+.cost-calculator-panel [data-cost-model-action="save"] {
+  border: 0;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb 55%, #4f46e5);
+  color: #ffffff;
+  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.22);
+}
+
+.cost-calculator-panel [data-cost-model-action="save"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 38px rgba(37, 99, 235, 0.3);
+}
+
+.gate-evidence-actions [data-evidence-action="attach"] {
+  border: 1px solid rgba(96, 165, 250, 0.48);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(239, 246, 255, 0.9)),
+    #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.12);
+}
+
+.gate-evidence-actions [data-evidence-action="attach"]:hover {
+  border-color: rgba(37, 99, 235, 0.62);
+  background:
+    linear-gradient(180deg, #ffffff, #dbeafe),
+    #dbeafe;
+  color: #1e40af;
+  transform: translateY(-1px);
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.18);
+}
+
+.cost-calculator-panel [data-cost-model-action="save"]:active,
+.gate-evidence-actions [data-evidence-action="attach"]:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.cost-calculator-panel [data-cost-model-action="save"]:focus-visible,
+.gate-evidence-actions [data-evidence-action="attach"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(147, 197, 253, 0.5),
+    0 16px 34px rgba(37, 99, 235, 0.2);
+}
+
+.cost-calculator-panel .section-header.compact {
+  align-items: flex-start;
+}
+
+.gate-evidence-actions {
+  align-items: stretch;
+}
+
+.gate-evidence-actions input {
+  min-height: 42px;
+}
+
+@media (max-width: 680px) {
+  .cost-calculator-panel .section-header.compact,
+  .gate-evidence-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cost-calculator-panel .section-header.compact {
+    display: grid;
+  }
+
+  .cost-calculator-panel [data-cost-model-action="save"],
+  .gate-evidence-actions [data-evidence-action="attach"] {
+    width: 100%;
+  }
+}
+
+/* Destructive report actions stay visually distinct from standard dashboard buttons. */
+body.dashboard-mode #assessmentDashboard button[data-dashboard-action="delete"],
+.dashboard-row-actions button[data-dashboard-action="delete"],
+body.dashboard-mode .history-actions button[data-history-action="delete"],
+body.workspace-mode .history-actions button[data-history-action="delete"],
+.history-actions button[data-history-action="delete"] {
+  border-color: rgba(251, 113, 133, 0.42);
+  background: linear-gradient(180deg, rgba(255, 241, 242, 0.96), rgba(255, 228, 230, 0.9));
+  color: #be123c;
+  box-shadow: 0 10px 24px rgba(190, 18, 60, 0.08);
+}
+
+body.dashboard-mode #assessmentDashboard button[data-dashboard-action="delete"]:hover,
+.dashboard-row-actions button[data-dashboard-action="delete"]:hover,
+body.dashboard-mode .history-actions button[data-history-action="delete"]:hover,
+body.workspace-mode .history-actions button[data-history-action="delete"]:hover,
+.history-actions button[data-history-action="delete"]:hover {
+  border-color: rgba(225, 29, 72, 0.5);
+  background: linear-gradient(180deg, #fff1f2, #ffe4e6);
+  color: #9f1239;
+  box-shadow: 0 14px 30px rgba(190, 18, 60, 0.12);
+}
+
+.cloudbridge-filter-menu {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59, 130, 246, 0.55) rgba(239, 246, 255, 0.9);
+}
+
+.cloudbridge-filter-menu::-webkit-scrollbar {
+  width: 10px;
+}
+
+.cloudbridge-filter-menu::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.9);
+}
+
+.cloudbridge-filter-menu::-webkit-scrollbar-thumb {
+  border: 3px solid rgba(239, 246, 255, 0.9);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.6);
+}
+
+.cloudbridge-filter-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(37, 99, 235, 0.72);
 }
