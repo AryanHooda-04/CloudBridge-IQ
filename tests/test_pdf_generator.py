@@ -45,6 +45,10 @@ def test_markdown_to_pdf_skips_mermaid_diagram_by_default():
 graph TD
     A --> B
 ```
+
+## Decision
+
+Continue with architect review.
 """,
         rendered_diagram_png=make_test_png(),
         rendered_diagram_title="Generated AWS Architecture Diagram",
@@ -52,9 +56,11 @@ graph TD
 
     text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
 
-    assert "Generated AWS Architecture Diagram" in text
+    assert "AWS Architecture Diagram" not in text
+    assert "Generated AWS Architecture Diagram" not in text
     assert "Rendered Mermaid Architecture Diagram" not in text
     assert "graph TD" not in text
+    assert "Continue with architect review." in text
 
 
 def test_pdf_generator_handles_wide_long_tables():
@@ -93,7 +99,11 @@ def test_pdf_generator_handles_wide_long_tables():
 
 def test_pdf_report_response_skips_optional_diagram_render_failure(monkeypatch):
     async def run_check():
+        renderer_called = False
+
         def fail_renderer(_target_architecture):
+            nonlocal renderer_called
+            renderer_called = True
             raise RuntimeError("diagram renderer unavailable")
 
         monkeypatch.setattr("app.main.generate_aws_diagram_png", fail_renderer)
@@ -113,6 +123,7 @@ def test_pdf_report_response_skips_optional_diagram_render_failure(monkeypatch):
 
         assert response.media_type == "application/pdf"
         assert response.body.startswith(b"%PDF")
+        assert renderer_called is False
 
     import asyncio
 

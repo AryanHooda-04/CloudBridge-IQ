@@ -615,29 +615,6 @@ async def download_report_pdf(
 
 
 async def _pdf_report_response(request: PdfReportRequest) -> Response:
-    rendered_diagram_png: bytes | None = None
-    rendered_diagram_title = "Generated Architecture Diagram"
-    mermaid_diagram_png = None
-    if request.include_mermaid_diagram:
-        mermaid_diagram_png = _decode_optional_base64_png(
-            request.mermaid_diagram_png_base64,
-            field_name="mermaid_diagram_png_base64",
-        )
-    if request.include_rendered_diagram and request.target_architecture is not None:
-        try:
-            rendered_diagram_png = await asyncio.wait_for(
-                asyncio.to_thread(generate_aws_diagram_png, request.target_architecture),
-                timeout=35,
-            )
-            rendered_diagram_title = (
-                f"Generated {request.target_architecture.provider.upper()} Architecture Diagram"
-            )
-        except asyncio.TimeoutError:
-            rendered_diagram_png = None
-        except RuntimeError:
-            rendered_diagram_png = None
-        except Exception:
-            rendered_diagram_png = None
     target_provider_for_report = request.target_provider
     if not target_provider_for_report and request.target_architecture is not None:
         target_provider_for_report = request.target_architecture.provider
@@ -647,11 +624,11 @@ async def _pdf_report_response(request: PdfReportRequest) -> Response:
             asyncio.to_thread(
                 markdown_to_pdf_bytes,
                 request.markdown_report,
-                include_mermaid_diagram=request.include_mermaid_diagram,
-                mermaid_diagram_png=mermaid_diagram_png,
+                include_mermaid_diagram=False,
+                mermaid_diagram_png=None,
                 mermaid_diagram_title="Rendered Mermaid Architecture Diagram",
-                rendered_diagram_png=rendered_diagram_png,
-                rendered_diagram_title=rendered_diagram_title,
+                rendered_diagram_png=None,
+                rendered_diagram_title="Generated Architecture Diagram",
                 source_provider=request.source_provider,
                 target_provider=target_provider_for_report,
             ),

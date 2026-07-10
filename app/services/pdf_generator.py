@@ -27,6 +27,11 @@ def markdown_to_pdf_bytes(
 ) -> bytes:
     """Convert the concise Markdown report into a readable PDF document."""
 
+    markdown = _strip_pdf_diagram_sections(markdown)
+    include_mermaid_diagram = False
+    mermaid_diagram_png = None
+    rendered_diagram_png = None
+
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
@@ -492,6 +497,33 @@ def markdown_to_pdf_bytes(
 def _inline(value: str) -> str:
     escaped = html.escape(value)
     return re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", escaped)
+
+
+def _strip_pdf_diagram_sections(markdown: str) -> str:
+    """Keep PDF export report-only by removing diagram-heavy markdown sections."""
+
+    without_mermaid_blocks = re.sub(
+        r"```mermaid[\s\S]*?```",
+        "",
+        markdown or "",
+        flags=re.IGNORECASE,
+    )
+    kept: list[str] = []
+    skipping_diagram_section = False
+    for line in without_mermaid_blocks.splitlines():
+        stripped = line.strip()
+        if re.match(
+            r"^##\s+(?:\d+\.\s*)?(?:AWS|Azure|GCP|Google Cloud|Target|Generated|Rendered)?\s*Architecture Diagram\b",
+            stripped,
+            flags=re.IGNORECASE,
+        ):
+            skipping_diagram_section = True
+            continue
+        if skipping_diagram_section and stripped.startswith("## "):
+            skipping_diagram_section = False
+        if not skipping_diagram_section:
+            kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
 
 
 def _column_widths(column_count: int, available_width: float) -> list[float] | None:

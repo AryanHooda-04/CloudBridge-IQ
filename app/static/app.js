@@ -874,7 +874,7 @@ downloadPdfButton.addEventListener("click", async () => {
   const original = downloadPdfButton.textContent;
   downloadPdfButton.textContent = "Building";
   try {
-    const response = await requestPdfReport({ includeRenderedDiagram: true });
+    const response = await requestPdfReport();
     const blob = await readExpectedBlob(response, "application/pdf", "PDF generation failed.");
     const saved = await downloadBlob("migration-assessment.pdf", blob);
     if (saved) {
@@ -892,22 +892,19 @@ downloadPdfButton.addEventListener("click", async () => {
   }
 });
 
-async function requestPdfReport({ includeRenderedDiagram }) {
+async function requestPdfReport() {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 120000);
   const basePayload = {
     action: "report_pdf",
     filename: "migration-assessment.pdf",
-    markdown_report: buildExportMarkdown(),
+    markdown_report: buildPdfExportMarkdown(),
     source_provider: latestResult.source_architecture?.provider || sourceProvider.value,
     target_provider: latestResult.target_architecture?.provider || targetProvider.value,
-    include_rendered_diagram: includeRenderedDiagram,
+    include_rendered_diagram: false,
     include_mermaid_diagram: false,
     mermaid_diagram_png_base64: null,
   };
-  if (includeRenderedDiagram && latestResult.target_architecture) {
-    basePayload.target_architecture = latestResult.target_architecture;
-  }
   try {
     const response = await apiFetch(`${API_BASE}/api/session`, {
       method: "POST",
@@ -919,11 +916,6 @@ async function requestPdfReport({ includeRenderedDiagram }) {
       return response;
     }
     const detail = await pdfErrorDetail(response);
-    if (includeRenderedDiagram) {
-      const fallbackResponse = await requestPdfReport({ includeRenderedDiagram: false });
-      showToast("PDF generated without the optional rendered diagram.", "info");
-      return fallbackResponse;
-    }
     throw new Error(detail);
   } finally {
     window.clearTimeout(timeoutId);
@@ -7073,6 +7065,33 @@ function buildExportMarkdown() {
     });
   }
   return `${latestResult.markdown_report.trim()}\n\n${additions.join("\n")}\n`;
+}
+
+function buildPdfExportMarkdown() {
+  return stripPdfDiagramSections(buildExportMarkdown());
+}
+
+function stripPdfDiagramSections(markdown) {
+  if (!markdown) {
+    return "";
+  }
+  const withoutMermaidBlocks = markdown.replace(/```mermaid[\s\S]*?```/gim, "");
+  const lines = withoutMermaidBlocks.split(/\r?\n/);
+  const kept = [];
+  let skippingDiagramSection = false;
+  lines.forEach((line) => {
+    if (/^##\s+(?:\d+\.\s*)?(?:AWS|Azure|GCP|Google Cloud|Target|Generated|Rendered)?\s*Architecture Diagram\b/i.test(line.trim())) {
+      skippingDiagramSection = true;
+      return;
+    }
+    if (skippingDiagramSection && /^##\s+/.test(line.trim())) {
+      skippingDiagramSection = false;
+    }
+    if (!skippingDiagramSection) {
+      kept.push(line);
+    }
+  });
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function toggleGoalPreset(goal) {
